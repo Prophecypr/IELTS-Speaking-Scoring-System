@@ -1,0 +1,8 @@
+# Ignored files
+*.bak
+*.pyc
+__pycache__/
+update_html.py
+.Node/
+.vscode/
+.DS_Store

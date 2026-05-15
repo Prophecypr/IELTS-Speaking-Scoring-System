@@ -1,0 +1,1680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>雅思口语练习</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js">
+function importQuestionBank(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      let newQs = [];
+      if (Array.isArray(data)) {
+        newQs = data;
+      } else if (data.questions && Array.isArray(data.questions)) {
+        newQs = data.questions;
+      } else {
+        alert('文件格式不正确，需要提供题目数组');
+        return;
+      }
+      // Validate and merge
+      let added = 0;
+      newQs.forEach(nq => {
+        if (!nq.id || !nq.part || !nq.text) return;
+        if (!QUESTIONS.some(eq => eq.id === nq.id)) {
+          QUESTIONS.push(nq);
+          added++;
+        }
+      });
+      buildTopicFilters();
+      renderPracQuestions();
+      renderQuestions();
+      alert('题库导入成功！新增 ' + added + ' 道题，共 ' + QUESTIONS.length + ' 道');
+    } catch(e) { alert('解析失败：' + e.message); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.1);
+    --border-md: rgba(0,0,0,0.18);
+    --text: #1a1a1a;
+    --text-muted: #666;
+    --text-hint: #999;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --blue: #185FA5;
+    --blue-bg: #E6F1FB;
+    --green: #3B6D11;
+    --green-bg: #EAF3DE;
+    --amber: #854F0B;
+    --amber-bg: #FAEEDA;
+    --purple: #3C3489;
+    --purple-bg: #EEEDFE;
+    --red: #A32D2D;
+    --red-bg: #FCEBEB;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
+  
+  /* Layout */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar { width: 220px; background: var(--surface); border-right: 0.5px solid var(--border); display: flex; flex-direction: column; position: fixed; height: 100vh; z-index: 100; }
+  .main { margin-left: 220px; flex: 1; padding: 24px; max-width: 900px; }
+  
+  /* Sidebar */
+  .sidebar-logo { padding: 20px 16px 16px; border-bottom: 0.5px solid var(--border); }
+  .sidebar-logo h1 { font-size: 15px; font-weight: 500; color: var(--text); }
+  .sidebar-logo p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text-muted); border-radius: 0; transition: background .15s; }
+  .nav-item:hover { background: var(--bg); color: var(--text); }
+  .nav-item.active { background: var(--blue-bg); color: var(--blue); font-weight: 500; }
+  .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+  .nav-section { padding: 12px 16px 4px; font-size: 11px; color: var(--text-hint); text-transform: uppercase; letter-spacing: .05em; }
+  .api-key-area { padding: 12px 16px; margin-top: auto; border-top: 0.5px solid var(--border); }
+  .api-key-area label { font-size: 11px; color: var(--text-hint); display: block; margin-bottom: 4px; }
+  .api-key-area input { width: 100%; font-size: 12px; padding: 6px 8px; border: 0.5px solid var(--border-md); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); outline: none; }
+  .api-key-area input:focus { border-color: var(--blue); }
+  
+  /* Pages */
+  .page { display: none; }
+  .page.active { display: block; }
+  
+  /* Page header */
+  .page-header { margin-bottom: 20px; }
+  .page-header h2 { font-size: 18px; font-weight: 500; }
+  .page-header p { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
+  
+  /* Cards */
+  .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px 20px; }
+  .card + .card { margin-top: 12px; }
+  
+  /* Buttons */
+  button { cursor: pointer; font-family: inherit; font-size: 13px; border: 0.5px solid var(--border-md); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); padding: 8px 16px; transition: background .15s; }
+  button:hover { background: var(--bg); }
+  .btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .btn-primary:hover { background: #0d4a87; }
+  .btn-danger { background: var(--red-bg); color: var(--red); border-color: var(--red); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  
+  /* Tags / badges */
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+  .badge-blue { background: var(--blue-bg); color: var(--blue); }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber); }
+  .badge-purple { background: var(--purple-bg); color: var(--purple); }
+  .badge-red { background: var(--red-bg); color: var(--red); }
+  
+  /* Question card */
+  .q-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px 20px; cursor: pointer; transition: border-color .15s; }
+  .q-card:hover { border-color: var(--blue); }
+  .q-card.selected { border-color: var(--blue); background: var(--blue-bg); }
+  .q-card h3 { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+  .q-card p { font-size: 12px; color: var(--text-muted); }
+  .q-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  
+  /* Filter bar */
+  .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  .filter-bar select { font-size: 13px; padding: 6px 10px; border: 0.5px solid var(--border-md); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; outline: none; }
+  .filter-bar select:focus { border-color: var(--blue); }
+  
+  /* Practice area */
+  .practice-q { font-size: 16px; font-weight: 500; margin-bottom: 12px; line-height: 1.5; }
+  .practice-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+  textarea { width: 100%; font-size: 14px; padding: 12px; border: 0.5px solid var(--border-md); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-family: inherit; resize: vertical; min-height: 120px; outline: none; line-height: 1.6; }
+  textarea:focus { border-color: var(--blue); }
+  
+  /* Timer */
+  .timer { font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--blue); }
+  .timer.warning { color: var(--amber); }
+  .timer.danger { color: var(--red); }
+  
+  /* Score cards */
+  .score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .score-card { background: var(--bg); border-radius: var(--radius-sm); padding: 12px; text-align: center; }
+  .score-card .label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .score-card .value { font-size: 22px; font-weight: 500; }
+  .score-overall { text-align: center; margin-bottom: 16px; }
+  .score-overall .num { font-size: 48px; font-weight: 500; color: var(--blue); line-height: 1; }
+  .score-overall .sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  
+  /* Feedback sections */
+  .feedback-section { margin-top: 12px; }
+  .feedback-section h4 { font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-muted); }
+  .feedback-list { list-style: none; }
+  .feedback-list li { font-size: 13px; padding: 6px 0; border-bottom: 0.5px solid var(--border); display: flex; gap: 8px; }
+  .feedback-list li:last-child { border-bottom: none; }
+  .feedback-list .dot { width: 6px; height: 6px; border-radius: 50%; margin-top: 7px; flex-shrink: 0; }
+  .dot-green { background: #639922; }
+  .dot-amber { background: #EF9F27; }
+  .dot-blue { background: #378ADD; }
+  
+  /* Templates */
+  .template-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 12px; }
+  .template-card h3 { font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+  .template-body { font-size: 13px; color: var(--text-muted); line-height: 1.8; }
+  .template-body .block { background: var(--bg); border-left: 3px solid var(--blue); padding: 8px 12px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin: 6px 0; font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; color: var(--text); }
+  .template-example { background: var(--green-bg); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 10px; font-size: 13px; color: var(--green); line-height: 1.7; }
+  
+  /* History */
+  .hist-item { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .hist-item .q-text { font-size: 13px; font-weight: 500; flex: 1; margin-right: 16px; }
+  .hist-item .meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+  .hist-item .score-badge { font-size: 18px; font-weight: 500; color: var(--blue); min-width: 40px; text-align: right; }
+  .hist-detail { font-size: 12px; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 0.5px solid var(--border); }
+  
+  /* Stats */
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .stat-card .stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+  .stat-card .stat-val { font-size: 28px; font-weight: 500; }
+  
+  /* Chart container */
+  .chart-container { position: relative; height: 240px; }
+  
+  /* Loading overlay */
+  .loading-overlay { display: none; align-items: center; justify-content: center; gap: 10px; padding: 20px; font-size: 13px; color: var(--text-muted); }
+  .loading-overlay.show { display: flex; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border-md); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  
+  /* Tabs */
+  .tabs { display: flex; border-bottom: 0.5px solid var(--border); margin-bottom: 16px; }
+  .tab { padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -0.5px; }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 500; }
+  
+  /* Radar chart */
+  .radar-wrap { max-width: 300px; margin: 0 auto 16px; }
+  
+  /* Misc */
+  .divider { height: 0.5px; background: var(--border); margin: 16px 0; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
+  .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+  .improved-answer { background: var(--purple-bg); border-radius: var(--radius-sm); padding: 12px; font-size: 13px; color: var(--text); line-height: 1.7; margin-top: 8px; }
+  input[type="text"] { font-size: 13px; padding: 6px 10px; border: 0.5px solid var(--border-md); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); outline: none; font-family: inherit; }
+  input[type="text"]:focus { border-color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <h1>雅思口语练习</h1>
+    <p>IELTS Speaking Trainer</p>
+  </div>
+  <div class="nav-section">练习</div>
+  <div class="nav-item active" onclick="showPage('practice')" id="nav-practice">
+    <span class="nav-icon">🎯</span> 开始练习
+  </div>
+  <div class="nav-item" onclick="showPage('questions')" id="nav-questions">
+    <span class="nav-icon">📋</span> 题库浏览
+  </div>
+  <div class="nav-item" onclick="showPage('templates')" id="nav-templates">
+    <span class="nav-icon">📐</span> 答题模板
+  </div>
+  <div class="nav-section">数据</div>
+  <div class="nav-item" onclick="showPage('history')" id="nav-history">
+    <span class="nav-icon">📚</span> 历史记录
+  </div>
+  <div class="nav-item" onclick="showPage('stats')" id="nav-stats">
+    <span class="nav-icon">📊</span> 我的进步
+  </div>
+  <div class="nav-section">设置</div>
+  <div class="nav-item" onclick="showPage('export')" id="nav-export">
+    <span class="nav-icon">⬇️</span> 导出数据
+  </div>
+  <div class="api-key-area">
+    <label>DeepSeek API Key</label>
+    <input type="text" id="apiKeyInput" placeholder="sk-..." />
+  </div>
+</nav>
+
+<!-- Main content -->
+<main class="main">
+
+  <!-- PRACTICE PAGE -->
+  <div class="page active" id="page-practice">
+    <div class="page-header">
+      <h2>开始练习</h2>
+      <p>选择题目或随机抽取，完成后获取 AI 评分和改进建议</p>
+    </div>
+    
+    <!-- Select question area -->
+    <div class="card" id="selectQuestionArea">
+      <div class="filter-bar">
+        <select id="pracPart" onchange="filterPracQuestions()">
+          <option value="">全部 Part</option>
+          <option value="1">Part 1</option>
+          <option value="2">Part 2</option>
+          <option value="3">Part 3</option>
+        </select>
+        <select id="pracTopic" onchange="filterPracQuestions()">
+          <option value="">全部话题</option>
+        </select>
+        <select id="pracSrc" onchange="filterPracQuestions()">
+          <option value="">新题+老题</option>
+          <option value="大陆新题">大陆新题</option>
+          <option value="大陆老题">大陆老题</option>
+          <option value="非大陆新题">非大陆新题</option>
+          <option value="万年老题">万年老题</option>
+        </select>
+        <button class="btn-primary" onclick="randomQuestion()">🎲 随机抽题</button>
+        <span id="pracQuestionCount" style="font-size:12px;color:var(--text-muted);white-space:nowrap"></span>
+        <button onclick="clearPracSelection()" id="clearSelBtn" style="display:none">✕ 取消选择</button>
+      </div>
+      <div class="q-grid" id="pracQuestionGrid"></div>
+    </div>
+    
+    <!-- Answer area (shown after question selected) -->
+    <div class="card" id="answerArea" style="display:none; margin-top:12px">
+      <div class="practice-meta">
+        <span class="badge" id="pracPartBadge"></span>
+        <span class="badge badge-blue" id="pracTopicBadge"></span>
+      </div>
+      <div class="practice-q" id="pracQuestion"></div>
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px">
+        <span class="timer" id="pracTimer">00:00</span>
+        <button onclick="toggleTimer()" id="timerBtn" class="btn-sm">开始计时</button>
+        <button onclick="resetTimer()" class="btn-sm">重置</button>
+        <span id="timerHint" style="font-size:12px;color:var(--text-hint)">Part 2 建议 2 分钟</span>
+      </div>
+      <textarea id="answerInput" placeholder="在这里输入你的答案..." rows="6"></textarea>
+      <div style="margin-top:12px" class="btn-row">
+        <button class="btn-primary" onclick="submitAnswer()">✓ 提交并评分</button>
+        <button onclick="clearAnswer()">清空</button>
+      </div>
+    </div>
+    
+    <!-- Loading -->
+    <div class="loading-overlay" id="scoringLoader">
+      <div class="spinner"></div>
+      <span>AI 正在评分，请稍候...</span>
+    </div>
+    
+    <!-- Score result -->
+    <div class="card" id="scoreResult" style="display:none; margin-top:12px">
+      <div class="tabs">
+        <div class="tab active" onclick="switchResultTab('overview', this)">总览</div>
+        <div class="tab" onclick="switchResultTab('detail', this)">详细反馈</div>
+        <div class="tab" onclick="switchResultTab('improved', this)">改进示范</div>
+      </div>
+      
+      <div id="resultTab-overview">
+        <div class="score-overall">
+          <div class="num" id="overallScore">-</div>
+          <div class="sub">综合雅思评分（0–9）</div>
+        </div>
+        <div class="score-grid">
+          <div class="score-card">
+            <div class="label">词汇资源</div>
+            <div class="value" id="s-vocab" style="color:var(--blue)">-</div>
+          </div>
+          <div class="score-card">
+            <div class="label">流利连贯</div>
+            <div class="value" id="s-fluency" style="color:var(--green)">-</div>
+          </div>
+          <div class="score-card">
+            <div class="label">语法范围</div>
+            <div class="value" id="s-grammar" style="color:var(--purple)">-</div>
+          </div>
+          <div class="score-card">
+            <div class="label">发音</div>
+            <div class="value" id="s-pronun" style="color:var(--amber)">-</div>
+          </div>
+        </div>
+        <div class="radar-wrap">
+          <canvas id="radarChart"></canvas>
+        </div>
+        <div class="feedback-section">
+          <h4>总体点评</h4>
+          <p id="overallComment" style="font-size:13px;line-height:1.7"></p>
+        </div>
+      </div>
+      
+      <div id="resultTab-detail" style="display:none">
+        <div class="feedback-section">
+          <h4>亮点 (Strengths)</h4>
+          <ul class="feedback-list" id="feedStrengths"></ul>
+        </div>
+        <div class="divider"></div>
+        <div class="feedback-section">
+          <h4>待提升 (Areas to improve)</h4>
+          <ul class="feedback-list" id="feedWeaknesses"></ul>
+        </div>
+        <div class="divider"></div>
+        <div class="feedback-section">
+          <h4>词汇替换建议</h4>
+          <ul class="feedback-list" id="feedVocab"></ul>
+        </div>
+      </div>
+      
+      <div id="resultTab-improved" style="display:none">
+        <div class="feedback-section">
+          <h4>改进版示范答案</h4>
+          <div class="improved-answer" id="improvedAnswer"></div>
+        </div>
+        <div class="feedback-section" style="margin-top:16px">
+          <h4>关键提升说明</h4>
+          <p id="improvedExplain" style="font-size:13px;line-height:1.7;color:var(--text-muted)"></p>
+        </div>
+      </div>
+      
+      <div class="divider"></div>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="practiceAgain()">再练一题</button>
+        <button onclick="saveToHistory()">💾 保存记录</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUESTIONS PAGE -->
+  <div class="page" id="page-questions">
+    <div class="page-header">
+      <h2>题库浏览</h2>
+      <p>共 <span id="totalQCount">0</span> 道题目，覆盖 Part 1/2/3 各话题</p>
+    </div>
+    <div class="filter-bar">
+      <select id="qPart" onchange="filterQuestions()">
+        <option value="">全部 Part</option>
+        <option value="1">Part 1</option>
+        <option value="2">Part 2</option>
+        <option value="3">Part 3</option>
+      </select>
+      <select id="qTopic" onchange="filterQuestions()">
+        <option value="">全部话题</option>
+      </select>
+      <input type="text" id="qSearch" placeholder="搜索题目..." oninput="filterQuestions()" style="min-width:180px" />
+    </div>
+    <div class="q-grid" id="questionGrid"></div>
+  </div>
+
+  <!-- TEMPLATES PAGE -->
+  <div class="page" id="page-templates">
+    <div class="page-header">
+      <h2>答题模板</h2>
+      <p>通用答题框架，帮助你组织思路、丰富表达</p>
+    </div>
+    
+    <div class="tabs">
+      <div class="tab active" onclick="switchTplTab('part1', this)">Part 1 模板</div>
+      <div class="tab" onclick="switchTplTab('part2', this)">Part 2 模板</div>
+      <div class="tab" onclick="switchTplTab('part3', this)">Part 3 模板</div>
+      <div class="tab" onclick="switchTplTab('phrases', this)">万能短语</div>
+    </div>
+    
+    <div id="tpl-part1">
+      <div class="template-card">
+        <h3>直接回答 + 展开 + 对比/举例</h3>
+        <div class="template-body">
+          <div class="block">Yes/No, + [直接给出观点]...</div>
+          <div class="block">Actually / To be honest, + [补充理由]...</div>
+          <div class="block">For example / For instance, + [举具体例子]...</div>
+          <div class="block">(Optional) But I suppose + [转折或对比]...</div>
+        </div>
+        <div class="template-example">
+          "Do you like reading?"<br>
+          Yes, I actually enjoy reading quite a lot, especially novels. To be honest, it's one of my favourite ways to unwind after a long day. For instance, last week I finished a science fiction book and I found it absolutely fascinating.
+        </div>
+      </div>
+      <div class="template-card">
+        <h3>PEEL 结构（适合展开型问题）</h3>
+        <div class="template-body">
+          <div class="block">P — Point: 直接表明立场/观点</div>
+          <div class="block">E — Evidence: 给出原因/背景</div>
+          <div class="block">E — Example: 举具体例子</div>
+          <div class="block">L — Link: 总结/回扣问题</div>
+        </div>
+      </div>
+    </div>
+    
+    <div id="tpl-part2" style="display:none">
+      <div class="template-card">
+        <h3>Part 2 卡片题完整框架（1–2 分钟）</h3>
+        <div class="template-body">
+          <div class="block">I'd like to talk about [主题]...</div>
+          <div class="block">When: 时间/背景 → "This happened about [时间] ago / back when I was..."</div>
+          <div class="block">Where: 地点 → "It took place in / at [地点]..."</div>
+          <div class="block">Who/What: 细节 → "I was with [人物] / The [事物] was..."</div>
+          <div class="block">Why memorable / how you felt: "What made it special was... / I felt incredibly..."</div>
+          <div class="block">Conclusion: "Overall, it was [形容词] experience because..."</div>
+        </div>
+        <div class="template-example">
+          "Describe a memorable journey."<br>
+          I'd like to talk about a trip I took to Guilin about two years ago. It took place during the National Day holiday, and I went with my university friends — there were four of us in total. What made it unforgettable was the breathtaking landscape, the karst mountains reflected in the Li River were unlike anything I'd ever seen. I felt genuinely awestruck. Overall, it was one of the most refreshing experiences I've had, mainly because it gave me a complete break from city life.
+        </div>
+      </div>
+    </div>
+    
+    <div id="tpl-part3" style="display:none">
+      <div class="template-card">
+        <h3>观点表达模板（Part 3 讨论题）</h3>
+        <div class="template-body">
+          <div class="block">I think / I believe / In my view + [观点]...</div>
+          <div class="block">This is because / The main reason is + [理由]...</div>
+          <div class="block">Take [例子] as an example...</div>
+          <div class="block">On the other hand / However + [反面/让步]...</div>
+          <div class="block">So overall / All things considered + [总结立场]...</div>
+        </div>
+      </div>
+      <div class="template-card">
+        <h3>比较分析模板</h3>
+        <div class="template-body">
+          <div class="block">Compared to [A], [B] tends to be more [形容词]...</div>
+          <div class="block">While [A] has the advantage of..., [B] is better in terms of...</div>
+          <div class="block">In the past, people used to... but nowadays...</div>
+          <div class="block">It depends on + [条件]. If..., then... If..., however...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div id="tpl-phrases" style="display:none">
+      <div class="template-card">
+        <h3>开场 & 过渡短语</h3>
+        <div class="template-body">
+          <div class="block">Well, that's an interesting question... / Let me think about that for a second...</div>
+          <div class="block">As far as I'm concerned... / From my perspective...</div>
+          <div class="block">Having said that... / That being said...</div>
+          <div class="block">What I mean is... / In other words...</div>
+          <div class="block">It's hard to generalise, but... / It really depends on...</div>
+        </div>
+      </div>
+      <div class="template-card">
+        <h3>高分词汇替换</h3>
+        <div class="template-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:13px">
+            <div class="block">good → excellent / outstanding / remarkable</div>
+            <div class="block">very → incredibly / remarkably / tremendously</div>
+            <div class="block">big → enormous / substantial / significant</div>
+            <div class="block">like → enjoy / be fond of / be passionate about</div>
+            <div class="block">think → believe / reckon / be of the opinion</div>
+            <div class="block">because → due to / owing to / as a result of</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY PAGE -->
+  <div class="page" id="page-history">
+    <div class="page-header">
+      <h2>历史记录</h2>
+      <p>你的所有练习记录 — 共 <span id="histCount">0</span> 条</p>
+    </div>
+    <div class="filter-bar">
+      <select id="histFilter" onchange="renderHistory()">
+        <option value="">全部</option>
+        <option value="1">Part 1</option>
+        <option value="2">Part 2</option>
+        <option value="3">Part 3</option>
+      </select>
+      <button class="btn-danger btn-sm" onclick="clearHistory()">清空历史</button>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+  <!-- STATS PAGE -->
+  <div class="page" id="page-stats">
+    <div class="page-header">
+      <h2>我的进步</h2>
+      <p>可视化你的练习进度和分数趋势</p>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">总练习次数</div>
+        <div class="stat-val" id="statTotal">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">平均综合分</div>
+        <div class="stat-val" id="statAvg" style="color:var(--blue)">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">最高得分</div>
+        <div class="stat-val" id="statBest" style="color:var(--green)">-</div>
+      </div>
+    </div>
+    <div class="card">
+      <p style="font-size:13px;font-weight:500;margin-bottom:12px">分数趋势</p>
+      <div class="chart-container">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <p style="font-size:13px;font-weight:500;margin-bottom:12px">各维度平均分</p>
+      <div style="max-width:320px;margin:0 auto">
+        <canvas id="avgRadarChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPORT PAGE -->
+  <div class="page" id="page-export">
+    <div class="page-header">
+      <h2>导出数据</h2>
+      <p>将你的练习记录导出为不同格式</p>
+    </div>
+    <div class="card">
+      <p style="font-size:14px;font-weight:500;margin-bottom:4px">JSON 格式</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">完整数据，可导入恢复，适合备份</p>
+      <button class="btn-primary" onclick="exportJSON()">下载 JSON</button>
+    </div>
+    <div class="card">
+      <p style="font-size:14px;font-weight:500;margin-bottom:4px">CSV 格式</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">表格格式，可用 Excel/Numbers 打开分析</p>
+      <button class="btn-primary" onclick="exportCSV()">下载 CSV</button>
+    </div>
+    <div class="card">
+      <p style="font-size:14px;font-weight:500;margin-bottom:4px">PDF 报告</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">生成练习报告 PDF，适合打印存档</p>
+      <button class="btn-primary" onclick="exportPDF()">下载 PDF</button>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <p style="font-size:14px;font-weight:500;margin-bottom:4px">导入题库 JSON</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">导入自定义题库（格式：[{"id":..., "part":1, "topic":"...", "text":"...", "questions":[...], "src":"..."}]）。导入后题库将合并到现有题目中。</p>
+      <input type="file" id="importQuestionBank" accept=".json" onchange="importQuestionBank(event)" style="font-size:13px" />
+    </div>
+    <div class="card" style="margin-top:12px">
+      <p style="font-size:14px;font-weight:500;margin-bottom:4px">导入历史记录 JSON</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">从之前导出的 JSON 文件恢复练习记录</p>
+      <input type="file" id="importFile" accept=".json" onchange="importJSON(event)" style="font-size:13px" />
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+// ============================================================
+// QUESTION BANK — 2026年5-8月雅思口语真题（来源：雅思哥0515版）
+// 大陆新题 + 老题沿用 + 非大陆新题，共120题
+// Part 2 题目含 cues + P3 讨论题
+// ============================================================
+const QUESTIONS = [
+  // ── Part 1 大陆 5月新题 ──────────────────────────────────
+  {id:1, part:1, src:"大陆新题", topic:"Music",
+   text:"Do you prefer sad or happy music? Does happy music make you feel more excited?",
+   questions:["Do you prefer sad or happy music?","Does happy music make you feel more excited?"]},
+  {id:2, part:1, src:"大陆新题", topic:"Teachers",
+   text:"Do you have a favourite teacher? Do you want to be a teacher in the future? Do you have a teacher from your past that you still remember? Are you still in touch with your primary school teachers? In what way has your favourite teacher helped you?",
+   questions:["Do you have a favourite teacher?","Do you want to be a teacher in the future?","Do you have a teacher from your past that you still remember?","Are you still in touch with your primary school teachers?","In what way has your favourite teacher helped you?"]},
+  {id:3, part:1, src:"大陆新题", topic:"Social media",
+   text:"Have you ever posted anything on social media? When did you start using social media? Do you think you spend too much time on social media? Do your friends use social media? What do people often do on social media?",
+   questions:["Have you ever posted anything on social media?","When did you start using social media?","Do you think you spend too much time on social media?","Do your friends use social media?","What do people often do on social media?"]},
+  {id:4, part:1, src:"大陆新题", topic:"Tidiness",
+   text:"Do you like to keep things tidy? Did you use to keep your room tidy as a child? How do you keep your work or study space tidy? Do you think that it is necessary to be tidy?",
+   questions:["Do you like to keep things tidy?","Did you use to keep your room tidy as a child?","How do you keep your work or study space tidy?","Do you think that it is necessary to be tidy?"]},
+  {id:5, part:1, src:"大陆新题", topic:"Websites",
+   text:"What kinds of websites do you often visit? What is your favourite website? Are there any changes to the websites you often visit? What kinds of websites are popular in your country? Do you prefer getting information from websites or books? Would you like to have your own website?",
+   questions:["What kinds of websites do you often visit?","What is your favourite website?","Are there any changes to the websites you often visit?","What kinds of websites are popular in your country?","Do you prefer getting information from websites or books?","Would you like to have your own website?"]},
+  {id:6, part:1, src:"大陆新题", topic:"Watch",
+   text:"Do you wear a watch? Have you ever got a watch as a gift? Why do some people wear expensive watches? Do you think it is important to wear a watch?",
+   questions:["Do you wear a watch?","Have you ever got a watch as a gift?","Why do some people wear expensive watches?","Do you think it is important to wear a watch? Why?"]},
+  {id:7, part:1, src:"大陆新题", topic:"Shopping",
+   text:"Do you like shopping? How often do you go shopping? Do you prefer online shopping or in-store shopping? Have you ever returned anything you bought online?",
+   questions:["Do you like shopping?","How often do you go shopping?","Do you prefer online shopping or in-store shopping?","Have you ever returned anything you bought online?"]},
+  {id:8, part:1, src:"大陆新题", topic:"Cars",
+   text:"Did you enjoy traveling by car when you were a kid? What types of cars do you like? Do you prefer to be a driver or a passenger? What do you usually do when there is a traffic jam? Do you think car colours are important? Will you buy an expensive car in the future?",
+   questions:["Did you enjoy traveling by car when you were a kid?","What types of cars do you like?","Do you prefer to be a driver or a passenger?","What do you usually do when there is a traffic jam?","Do you think car colours are important?","Will you buy an expensive car in the future?"]},
+  {id:9, part:1, src:"大陆新题", topic:"Public gardens and parks",
+   text:"Did you like going to parks as a child? Do you still like going to parks now? Would you like to see more parks in your city? Are there any parks you want to go to in the future? Would you prefer to play in a personal garden or public garden? How are the parks today different from those you visited as a kid?",
+   questions:["Did you like going to parks as a child?","Do you still like going to parks now?","Would you like to see more parks in your city?","Are there any parks you want to go to in the future?","Would you prefer to play in a personal garden or public garden?","How are the parks today different from those you visited as a kid?"]},
+  {id:10, part:1, src:"大陆新题", topic:"Science",
+   text:"Do you like science? When did you start to learn about science? Which science subject is interesting to you? What kinds of interesting things have you done with science? Do you like watching science TV programs? Do Chinese people often visit science museums?",
+   questions:["Do you like science?","When did you start to learn about science?","Which science subject is interesting to you?","What kinds of interesting things have you done with science?","Do you like watching science TV programs?","Do Chinese people often visit science museums?"]},
+  {id:11, part:1, src:"大陆新题", topic:"Mirrors",
+   text:"Do you like looking at yourself in the mirror? How often? Have you ever bought mirrors? Do you usually take a mirror with you? Would you use mirrors to decorate your room?",
+   questions:["Do you like looking at yourself in the mirror? How often?","Have you ever bought mirrors?","Do you usually take a mirror with you?","Would you use mirrors to decorate your room?"]},
+  {id:12, part:1, src:"大陆新题", topic:"Outer space and stars",
+   text:"Have you ever learnt about outer space and stars? Do you like science fiction movies? Why? Do you want to know more about outer space? Do you want to go into outer space in the future?",
+   questions:["Have you ever learnt about outer space and stars?","Do you like science fiction movies? Why?","Do you want to know more about outer space?","Do you want to go into outer space in the future?"]},
+  {id:13, part:1, src:"大陆新题", topic:"Singing",
+   text:"Do you like singing? Why? Have you ever learnt how to sing? Who do you want to sing for? Do you think singing can bring happiness to people? Do you like listening to others singing? Have you ever taken a singing class?",
+   questions:["Do you like singing? Why?","Have you ever learnt how to sing?","Who do you want to sing for?","Do you think singing can bring happiness to people?","Do you like listening to others singing?","Have you ever taken a singing class?"]},
+  {id:14, part:1, src:"大陆新题", topic:"Clothing",
+   text:"What kind of clothes do you like to wear? Do you prefer to wear comfortable and casual clothes or smart clothes? Do you like wearing T-shirts? Do you spend a lot of time choosing clothes? Do you wear different styles of clothes on weekdays and weekends? What colour clothes do you like?",
+   questions:["What kind of clothes do you like to wear?","Do you prefer to wear comfortable and casual clothes or smart clothes?","Do you like wearing T-shirts?","Do you spend a lot of time choosing clothes?","Do you wear different styles of clothes on weekdays and weekends?","What colour clothes do you like?"]},
+  {id:15, part:1, src:"大陆新题", topic:"Jokes & Comedies",
+   text:"Are you good at telling jokes? Do your friends like to tell jokes? Do you like to watch comedies? Have you ever watched a live show? Are comedy shows popular in your country?",
+   questions:["Are you good at telling jokes?","Do your friends like to tell jokes?","Do you like to watch comedies?","Have you ever watched a live show?","Are comedy shows popular in your country?"]},
+  {id:16, part:1, src:"大陆新题", topic:"Headphones",
+   text:"Do you use headphones? What type of headphones do you use? When would you use headphones? In what conditions would you not use headphones? Is wearing headphones comfortable?",
+   questions:["Do you use headphones?","What type of headphones do you use?","When would you use headphones?","In what conditions would you not use headphones?","Is wearing headphones comfortable?"]},
+  // ── Part 1 大陆老题沿用 ──────────────────────────────────
+  {id:17, part:1, src:"大陆老题", topic:"Food",
+   text:"What is your favourite food? Do you like cooking? Is eating healthy food important?",
+   questions:["What is your favourite food?","Do you like cooking?","Is eating healthy food important?"]},
+  {id:18, part:1, src:"大陆老题", topic:"Pets and Animals",
+   text:"What's your favourite animal? Why? Where do you prefer to keep your pet, indoors or outdoors? Have you ever had a pet before? What is the most popular animal in China? Have you ever visited a zoo? Are there many people keeping pets in your country?",
+   questions:["What's your favourite animal? Why?","Where do you prefer to keep your pet, indoors or outdoors?","Have you ever had a pet before?","What is the most popular animal in China?","Have you ever visited a zoo?","Are there many people keeping pets in your country?"]},
+  {id:19, part:1, src:"大陆老题", topic:"Sport team",
+   text:"Have you ever been part of a sports team? Is team sports popular in your culture? Do you like watching team games? Why? What are the differences between team sports and individual sports?",
+   questions:["Have you ever been part of a sports team?","Is team sports popular in your culture?","Do you like watching team games? Why?","What are the differences between team sports and individual sports?"]},
+  {id:20, part:1, src:"大陆老题", topic:"Hobby",
+   text:"Do you have any hobbies? Did you have any hobbies when you were a child? Do you have a hobby that you've had since childhood? Do you have the same hobbies as your family members?",
+   questions:["Do you have any hobbies?","Did you have any hobbies when you were a child?","Do you have a hobby that you've had since childhood?","Do you have the same hobbies as your family members?"]},
+  {id:21, part:1, src:"大陆老题", topic:"Morning time",
+   text:"Do you like getting up early in the morning? What do you usually do in the morning? What did you do in the morning when you were little? Why? Are there any differences between what you do in the morning now and what you did in the past? Do you spend your mornings doing the same things on both weekends and weekdays?",
+   questions:["Do you like getting up early in the morning?","What do you usually do in the morning?","What did you do in the morning when you were little? Why?","Are there any differences between what you do in the morning now and what you did in the past?","Do you spend your mornings doing the same things on both weekends and weekdays? Why?"]},
+  {id:22, part:1, src:"大陆老题", topic:"Gifts",
+   text:"Have you ever sent handmade gifts to others? Have you ever received a great gift? What do you consider when choosing a gift? Do you think you are good at choosing gifts? What gift have you received recently?",
+   questions:["Have you ever sent handmade gifts to others?","Have you ever received a great gift?","What do you consider when choosing a gift?","Do you think you are good at choosing gifts?","What gift have you received recently?"]},
+  {id:23, part:1, src:"大陆老题", topic:"Reading",
+   text:"Do you like reading? Do you prefer to read on paper or on a screen? When do you need to read carefully, and when not? Do you prefer scanning or detailed reading?",
+   questions:["Do you like reading?","Do you prefer to read on paper or on a screen?","When do you need to read carefully, and when not?","Do you prefer scanning or detailed reading?"]},
+  {id:24, part:1, src:"大陆老题", topic:"Walking",
+   text:"Do you walk a lot? Did you often go outside to have a walk when you were a child? Why do people like to walk in parks? Where would you like to take a long walk if you had the chance? Where did you go for a walk lately?",
+   questions:["Do you walk a lot?","Did you often go outside to have a walk when you were a child?","Why do people like to walk in parks?","Where would you like to take a long walk if you had the chance?","Where did you go for a walk lately?"]},
+  {id:25, part:1, src:"大陆老题", topic:"Typing",
+   text:"Do you prefer typing or handwriting? Do you type on a desktop or laptop keyboard every day? When did you learn how to type on a keyboard? How do you improve your typing?",
+   questions:["Do you prefer typing or handwriting?","Do you type on a desktop or laptop keyboard every day?","When did you learn how to type on a keyboard?","How do you improve your typing?"]},
+  {id:26, part:1, src:"大陆老题", topic:"Scenery",
+   text:"Do you look out the window at the scenery when travelling by bus or car? Do you prefer the mountains or the sea? Do you like to take scenery pictures? What are the most beautiful sights you have seen while traveling?",
+   questions:["Do you look out the window at the scenery when travelling by bus or car?","Do you prefer the mountains or the sea?","Do you like to take scenery pictures?","What are the most beautiful sights you have seen while traveling?"]},
+  {id:27, part:1, src:"大陆老题", topic:"Building",
+   text:"Are there tall buildings near your home? Do you take photos of buildings? Is there a building that you would like to visit? Do you want to live in a tall building?",
+   questions:["Are there tall buildings near your home?","Do you take photos of buildings?","Is there a building that you would like to visit?","Do you want to live in a tall building?"]},
+  {id:28, part:1, src:"大陆老题", topic:"Childhood activities",
+   text:"What are your favourite activities? What were your favourite activities when you were a child? Did you prefer to do activities alone or with a group of people when you were a child? Are there any differences between the activities you liked when you were a child and those you like now?",
+   questions:["What are your favourite activities?","What were your favourite activities when you were a child?","Did you prefer to do activities alone or with a group of people when you were a child?","Are there any differences between the activities you liked when you were a child and those you like now?"]},
+  {id:29, part:1, src:"大陆老题", topic:"Views",
+   text:"Do you like taking pictures of different views? Do you prefer views in urban areas or rural areas? Do you prefer views in your own country or in other countries? Have you seen an unforgettable and beautiful view or scenery?",
+   questions:["Do you like taking pictures of different views?","Do you prefer views in urban areas or rural areas?","Do you prefer views in your own country or in other countries?","Have you seen an unforgettable and beautiful view or scenery?"]},
+  {id:30, part:1, src:"大陆老题", topic:"Life stages",
+   text:"What did you often do with your friends in your childhood? What do you think is the most important at the moment? Do you have any plans for the next five years? How do people remember each stage of their lives? Do you enjoy being the age you are now?",
+   questions:["What did you often do with your friends in your childhood?","What do you think is the most important at the moment?","Do you have any plans for the next five years?","How do people remember each stage of their lives?","Do you enjoy being the age you are now?","At what age do you think people are the happiest?"]},
+  // 万年老题
+  {id:31, part:1, src:"万年老题", topic:"Work or studies",
+   text:"What subjects are you studying? Do you like your subject? Why did you choose to study that subject? Do you think that your subject is popular in your country? What technology do you use when you study?",
+   questions:["What subjects are you studying?","Do you like your subject?","Why did you choose to study that subject?","What technology do you use when you study?","What changes would you like to see in your school?"]},
+  {id:32, part:1, src:"万年老题", topic:"Home / accommodation",
+   text:"What kind of house or apartment do you want to live in in the future? Do you prefer living in a house or an apartment? Please describe the room you live in. What part of your home do you like the most? How long have you lived there?",
+   questions:["What kind of house or apartment do you want to live in in the future?","Do you prefer living in a house or an apartment?","Please describe the room you live in.","What part of your home do you like the most?","How long have you lived there?","Do you plan to live there for a long time?"]},
+  {id:33, part:1, src:"万年老题", topic:"Hometown",
+   text:"Where is your hometown? Is that a big city or a small place? Please describe your hometown a little. How long have you been living there? Do you like your hometown? What do you like (most) about your hometown? What's your hometown famous for?",
+   questions:["Where is your hometown?","Is that a big city or a small place?","Please describe your hometown a little.","Do you like your hometown?","What do you like (most) about your hometown?","What's your hometown famous for?"]},
+  {id:34, part:1, src:"万年老题", topic:"The area you live in",
+   text:"Do you like the area that you live in? Where do you like to go in that area? Do you know any famous people in your area? What are some changes in the area recently? Do you know any of your neighbors? Do you live in a noisy or a quiet area?",
+   questions:["Do you like the area that you live in?","Where do you like to go in that area?","Do you know any famous people in your area?","What are some changes in the area recently?","Do you know any of your neighbors?","Do you live in a noisy or a quiet area?"]},
+  {id:35, part:1, src:"万年老题", topic:"The city you live in",
+   text:"What city do you live in? Do you like this city? Why? How long have you lived in this city? Are there big changes in this city? Are the people friendly in the city? Would you recommend your city to others?",
+   questions:["What city do you live in?","Do you like this city? Why?","How long have you lived in this city?","Are there big changes in this city?","Are the people friendly in the city?","Would you recommend your city to others?"]},
+  // ── Part 1 非大陆新题 ────────────────────────────────────
+  {id:36, part:1, src:"非大陆新题", topic:"Dream and ambition",
+   text:"What was your childhood dream? Are you the kind of person who sticks to dreams? What is your dream job? Do you think you are an ambitious person?",
+   questions:["What was your childhood dream?","Are you the kind of person who sticks to dreams?","What is your dream job?","Do you think you are an ambitious person?"]},
+  {id:37, part:1, src:"非大陆新题", topic:"History",
+   text:"Have you ever been to historical museums? Do you like history? When was the last time you read about history? Did you like history when you were young?",
+   questions:["Have you ever been to historical museums?","Do you like history?","When was the last time you read about history?","Did you like history when you were young?"]},
+  {id:38, part:1, src:"非大陆新题", topic:"Films / cinemas",
+   text:"What films do you like? Did you often watch films when you were a child? Do you often go to the cinema with your friends? Do you think going to the cinema is a good way to spend time with friends? How often do you watch films? Do you prefer to watch films at home or in the cinema?",
+   questions:["What films do you like?","Did you often watch films when you were a child?","Do you often go to the cinema with your friends?","Do you think going to the cinema is a good way to spend time with friends?","How often do you watch films?","Do you prefer to watch films at home or in the cinema?"]},
+  {id:39, part:1, src:"非大陆新题", topic:"Old buildings",
+   text:"Have you ever seen old buildings in the city? Do you think we should preserve old buildings in cities? Do you prefer living in an old building or a modern house? Are there any old buildings you want to see in the future?",
+   questions:["Have you ever seen old buildings in the city?","Do you think we should preserve old buildings in cities?","Do you prefer living in an old building or a modern house?","Are there any old buildings you want to see in the future? Why?"]},
+  {id:40, part:1, src:"非大陆新题", topic:"Evening time",
+   text:"Do you like the morning or evening? What do you usually do in the evening? What did you do in the evening when you were little? Why? Are there any differences between what you do in the evening now and what you did in the past? What do you hate doing in the evening?",
+   questions:["Do you like the morning or evening?","What do you usually do in the evening?","What did you do in the evening when you were little? Why?","Are there any differences between what you do in the evening now and what you did in the past?","What do you hate doing in the evening?"]},
+  {id:41, part:1, src:"非大陆新题", topic:"Morning routines",
+   text:"What do you do right after getting up in the morning? Is breakfast important? What is your morning routine? Do you like to get up early in the morning?",
+   questions:["What do you do right after getting up in the morning?","Is breakfast important?","What is your morning routine?","Do you like to get up early in the morning?"]},
+  {id:42, part:1, src:"非大陆新题", topic:"Sports programs",
+   text:"Do you like watching sports programs on TV? Do you like to watch live sports games? Who do you like to watch sports games with? What kinds of games do you expect to watch in the future? Do you prefer to watch sports games alone or with a group of friends? Have you ever watched a sports game in a stadium?",
+   questions:["Do you like watching sports programs on TV?","Do you like to watch live sports games?","Who do you like to watch sports games with?","What kinds of games do you expect to watch in the future?","Do you prefer to watch sports games alone or with a group of friends?","Have you ever watched a sports game in a stadium?"]},
+  // ── Part 2+3 大陆 5月新题 ────────────────────────────────
+  {id:101, part:2, src:"大陆新题", topic:"建筑",
+   text:"Describe a tall building you like or dislike.\nYou should say:\n• What it is used for\n• Where it is\n• What it looks like\nAnd explain why you like/dislike it.",
+   p3:["Are there many tall buildings in your country?","What are the differences between those tall buildings in your country?","Why are different places laid out and designed differently?","What are the advantages of living in tall buildings?","Why do some people like to remodel and decorate their homes themselves?","What kind of interior design style do most people like?"]},
+  {id:102, part:2, src:"大陆新题", topic:"视频/媒体",
+   text:"Describe an interesting video.\nYou should say:\n• When and where you watched it\n• What it is about\n• Why you watched it\nAnd explain how you feel about it.",
+   p3:["What kind of videos do people in your country like to watch?","Which is more helpful, watching videos or reading books?","What skills can people learn from watching videos?","Are there any differences between the videos that young people and old people like to watch?"]},
+  {id:103, part:2, src:"大陆新题", topic:"地点",
+   text:"Describe a boring place.\nYou should say:\n• Where it is\n• Who you went there with\n• What you did there\nAnd explain why you think it is a boring place.",
+   p3:["Why do most children think education is boring?","Why aren't young people willing to listen to the experiences of older people?","What can people do when they feel bored?","Why are some teachers' classes boring? Are there any solutions?","Why do some young people feel bored when talking with old people?"]},
+  {id:104, part:2, src:"大陆新题", topic:"城市/旅行",
+   text:"Describe your favourite city that you have visited.\nYou should say:\n• Where it is\n• How you knew it\n• When you visited it\nAnd explain why it is your favourite city.",
+   p3:["Which is more suitable for young people, urban life or rural life, and which is more suitable for old people?","How do people choose a city to travel to?","Do you think a tourist city is also a good place to live? Why?","Do most people prefer to travel in a modern city or a historical city?"]},
+  {id:105, part:2, src:"大陆新题", topic:"经历",
+   text:"Describe a time when you got up early.\nYou should say:\n• When it was\n• What you did\n• Why you got up early\nAnd how you felt about it.",
+   p3:["Do you know anyone who likes to get up early?","Why do people get up early?","What kinds of occasions need people to arrive early?","Why do some people like to stay up late?","Is it good to arrive early in any situation?"]},
+  {id:106, part:2, src:"大陆新题", topic:"人物",
+   text:"Describe a person who loves to grow vegetables at home or in the garden.\nYou should say:\n• Who this person is\n• What vegetables he/she grows\n• How he/she grows the vegetables\nAnd explain why he/she loves growing vegetables.",
+   p3:["What are the advantages of growing vegetables or flowers at home?","Do many people grow vegetables or flowers at home in your country?"]},
+  {id:107, part:2, src:"大陆新题", topic:"法律/社会",
+   text:"Describe a new law you would like to introduce in your country.\nYou should say:\n• What law it is\n• What changes this law brings\n• Whether this new law will be popular\n• How you came up with the new law\nAnd explain how you feel about this new law.",
+   p3:["What rules should students follow at school?","Do people in your country usually obey the law?","What kinds of behavior are considered as good behavior?","Do you think children can learn about the law outside of school?","What are the benefits for people to obey rules?","How can parents teach children to obey rules?"]},
+  {id:108, part:2, src:"大陆新题", topic:"人物",
+   text:"Describe a friend from your childhood.\nYou should say:\n• Who he/she is\n• Where and how you met each other\n• What you often did together\nAnd explain what made you like him/her.",
+   p3:["Do you still keep in touch with your friends from childhood? Why or why not?","How important is childhood friendship to children?","What do you think of communicating via social media?","Do you think online communication through social media will replace face-to-face communication?","What's the difference between having younger friends and older friends?","Has technology changed people's friendships? How?"]},
+  {id:109, part:2, src:"大陆新题", topic:"人物",
+   text:"Describe a person you know who would like to choose a career in the medical field (e.g. a doctor, a nurse).\nYou should say:\n• When you knew him/her\n• When he/she started to think about that\n• What he/she would like to do\nAnd explain why he/she would like to choose this career.",
+   p3:["Do you think being a doctor is easy or difficult?","Do you think learning biology is interesting for children?"]},
+  {id:110, part:2, src:"大陆新题", topic:"人物",
+   text:"Describe a person you know who has a successful business.\nYou should say:\n• Who this person is\n• How you got to know him/her\n• Why and how he/she started the business\n• What business he/she does\nAnd explain why you think the business is successful.",
+   p3:["Why do some people start their own business?","Should governments provide financial support to start-ups?"]},
+  {id:111, part:2, src:"大陆新题", topic:"经历",
+   text:"Describe a plan that you had to change recently.\nYou should say:\n• When this happened\n• What made you change the plan\n• What the new plan was\nAnd how you felt about the change.",
+   p3:["Do people often change their plans?","Would you tell others if you change your plan?","Why do you think parents still make plans for their children nowadays?","How does technology help people make plans?"]},
+  {id:112, part:2, src:"大陆新题", topic:"经历",
+   text:"Describe a time when you worked in a group.\nYou should say:\n• What you did\n• Who you worked with\n• What problems you faced\nAnd explain why you worked in the group.",
+   p3:["Why do some people prefer to work by themselves?","What should a leader do to make team cooperation effective?","What are the advantages of working in a team?","Is it important for children to work in a group?"]},
+  {id:113, part:2, src:"大陆新题", topic:"经历",
+   text:"Describe an important decision you made.\nYou should say:\n• What the decision was\n• When you made the decision\n• How you made the decision\nAnd explain the results of the decision.",
+   p3:["What important decisions do young people need to make?","Do you think parents should make decisions for their children?","Why is it difficult for some people to make decisions?","Should people follow their hearts or their minds when making decisions?"]},
+  {id:114, part:2, src:"大陆新题", topic:"经历",
+   text:"Describe a live sports event you have been to.\nYou should say:\n• What event it was\n• Who you went with\n• What happened during the event\nAnd explain how you felt about it.",
+   p3:["What kinds of sports events are popular in your country?","Why do some people like watching live sports events?","What are the benefits of doing sports?","Should children be encouraged to do sports?"]},
+  {id:115, part:2, src:"大陆新题", topic:"食物",
+   text:"Describe a special food you have eaten on a special occasion.\nYou should say:\n• What it was\n• What occasion it was\n• Who you ate it with\nAnd explain why it was special.",
+   p3:["Why is food important in celebrations?","Do you think traditional food is becoming less popular?","What are the differences between eating at home and eating out?"]},
+  {id:116, part:2, src:"大陆新题", topic:"人物",
+   text:"Describe a person who is good at learning and speaking languages.\nYou should say:\n• Who this person is\n• What languages he/she speaks\n• How he/she learned the languages\nAnd explain why you think he/she is good at learning languages.",
+   p3:["What difficulties do people face when learning a language?","Do you think language learning is important? Why?","What's the best way to learn a language?"]},
+  {id:117, part:2, src:"大陆新题", topic:"科技",
+   text:"Describe a time when you had a problem with a piece of technology.\nYou should say:\n• What the problem was\n• When it happened\n• How you solved it\nAnd explain how you felt about it.",
+   p3:["What technology problems do people commonly face?","How has technology changed our daily lives?","Do you think people are too dependent on technology?"]},
+  {id:118, part:2, src:"大陆新题", topic:"广告/媒体",
+   text:"Describe an advertisement that featured a celebrity.\nYou should say:\n• What the advertisement was for\n• Who the celebrity was\n• Where you saw the advertisement\nAnd explain how you felt about it.",
+   p3:["Why do companies use celebrities in advertisements?","Do advertisements influence people's buying decisions?","What are the advantages and disadvantages of advertising?"]},
+  {id:119, part:2, src:"大陆新题", topic:"旅行",
+   text:"Describe a place you have visited that you would recommend to others.\nYou should say:\n• Where it is\n• When you visited it\n• What you did there\nAnd explain why you would recommend it.",
+   p3:["What factors do people consider when choosing a travel destination?","How has tourism changed in recent years?","What impact does tourism have on local communities?"]},
+  {id:120, part:2, src:"大陆新题", topic:"媒体/娱乐",
+   text:"Describe a TV or online programme you have watched recently and enjoyed.\nYou should say:\n• What it was about\n• When and where you watched it\n• Who you watched it with\nAnd explain why you enjoyed it.",
+   p3:["What kinds of TV/online programmes are popular in your country?","How has the way people watch television changed?","Do you think children should be restricted from watching certain programmes?"]},
+  {id:121, part:2, src:"大陆新题", topic:"物品",
+   text:"Describe a broken electronic device you once had.\nYou should say:\n• What it was\n• When it broke\n• What you did about it\nAnd explain how you felt about it.",
+   p3:["How do people deal with broken electronic devices?","Do you think it is important to repair rather than replace?","What impact does electronic waste have on the environment?"]},
+  {id:122, part:2, src:"大陆新题", topic:"地点",
+   text:"Describe a home you like to visit but would not want to live in.\nYou should say:\n• Where it is\n• Whose home it is\n• What it looks like\nAnd explain why you would not want to live there.",
+   p3:["What are the characteristics of an ideal home?","Do you think location is important when choosing a home?","How do people's housing needs change over their lifetime?"]},
+  {id:123, part:2, src:"大陆新题", topic:"动物/故事",
+   text:"Describe a story or book that contains animals.\nYou should say:\n• What story or book it is\n• What animals are in it\n• What the story is about\nAnd explain why you like or remember it.",
+   p3:["Why do many children's stories feature animals?","Do you think it is important to teach children about animals?","How do people's attitudes towards animals differ around the world?"]},
+  {id:124, part:2, src:"大陆新题", topic:"经历",
+   text:"Describe a time when someone helped you solve a problem.\nYou should say:\n• Who helped you\n• What the problem was\n• How they helped you\nAnd explain how you felt about their help.",
+   p3:["Why is it important to help others?","Do you think people today are less willing to help others than in the past?","How can communities support people who need help?"]},
+  {id:125, part:2, src:"大陆新题", topic:"法律/环境",
+   text:"Describe a law that is designed to protect the environment.\nYou should say:\n• What the law is\n• How you know about it\n• Who it affects\nAnd explain how you feel about this law.",
+   p3:["What environmental laws are effective in your country?","Do you think governments are doing enough to protect the environment?","What can individuals do to protect the environment?"]},
+  {id:126, part:2, src:"大陆新题", topic:"经历",
+   text:"Describe a time when you took a long time to reply to a message.\nYou should say:\n• When it was\n• Who sent the message\n• Why you took a long time to reply\nAnd explain how you felt about it.",
+   p3:["How has mobile phone communication changed people's relationships?","Do you think it is polite to reply to messages immediately?","What are the disadvantages of being constantly reachable?"]},
+  // ── Part 2+3 大陆老题沿用 ─────────────────────────────────
+  {id:201, part:2, src:"大陆老题", topic:"工作",
+   text:"Describe a perfect job you would like to have in the future.\nYou should say:\n• What it is\n• How you knew it\n• What you need to learn to get this job\nAnd explain why you think it is a perfect job for you.",
+   p3:["What kind of job can be called a 'dream job'?","What jobs do children want to do when they grow up?","Do people's ideal jobs change as they grow up?","What should people consider when choosing jobs?","Is salary the main reason why people choose a certain job?","What kind of jobs are the most popular in your country?"]},
+  {id:202, part:2, src:"大陆老题", topic:"人物",
+   text:"Describe a famous person you would like to meet.\nYou should say:\n• Who he/she is\n• How you knew him/her\n• How/where you would like to meet him/her\nAnd explain why you would like to meet him/her.",
+   p3:["What are the advantages and disadvantages of being a famous child?","What can today's children do to become famous?","What can children do with their fame?","Do people become famous because of their talent?","Is it easy to become famous in your country?","Do you want to be a famous person?"]},
+  {id:203, part:2, src:"大陆老题", topic:"科技/规则",
+   text:"Describe an occasion when you were not allowed to use your mobile phone.\nYou should say:\n• When it was\n• Where it was\n• Why you were not allowed to use your mobile phone\nAnd how you felt about it.",
+   p3:["How do young and old people use mobile phones differently?","What positive and negative impact do mobile phones have on friendship?","Do you think it is necessary to have laws on the use of mobile phones?","What are examples of good and poor phone manners?","How does the internet benefit people?"]},
+  {id:204, part:2, src:"大陆老题", topic:"经历",
+   text:"Describe a time when you gave advice to others.\nYou should say:\n• When it was\n• To whom you gave the advice\n• What the advice was\nAnd explain why you gave the advice.",
+   p3:["Should people prepare before giving advice?","Is it good to ask advice from strangers online?","What are the personalities of people whose job is to give advice to others?","What are the problems if you ask too many people for advice?","When would old people ask young people for advice?"]},
+  {id:205, part:2, src:"大陆老题", topic:"科技",
+   text:"Describe a piece of technology (not a phone) that you would like to own.\nYou should say:\n• What it is\n• How much it costs\n• How you knew it\nAnd explain why you would like to own it.",
+   p3:["What are the differences between the technology of the past and that of today?","What technology do young people like to use?","What are the differences between online and face-to-face communication?","Do you think technology has changed the way people communicate?","What negative effects does technology have on people's relationships?"]},
+  {id:206, part:2, src:"大陆老题", topic:"人物",
+   text:"Describe a person who makes plans a lot and is good at planning.\nYou should say:\n• Who he/she is\n• How you knew him/her\n• What plans he/she makes\nAnd explain how you feel about this person.",
+   p3:["Do you think it's important to plan ahead?","What activities do we need to plan ahead?","Do you think children should plan their future careers?","Should children ask their teachers or parents for advice when making plans?","Is making study plans popular among young people?"]},
+  {id:207, part:2, src:"大陆老题", topic:"人物/艺术",
+   text:"Describe a child who loves drawing/painting.\nYou should say:\n• Who he/she is\n• How/when you knew him/her\n• How often he/she draws/paints\nAnd explain why you think he/she loves drawing/painting.",
+   p3:["What is the right age for a child to learn drawing?","Why do most children draw more often than adults do?","Why do some people visit galleries or museums instead of viewing artworks online?","Do you think galleries and museums should be free of charge?","How do artworks inspire people?"]},
+  {id:208, part:2, src:"大陆老题", topic:"科技",
+   text:"Describe a program or app on your computer or phone.\nYou should say:\n• What it is\n• How often you use it\n• When/how you use it\n• When/how you found it\nAnd explain how you feel about it.",
+   p3:["What are the differences between old and young people when using apps?","Why do some people not like using apps?","What apps are popular in your country? Why?","Should parents limit their children's use of computer programs and computer games?","Do you think young people are more and more reliant on these programs?"]},
+  {id:209, part:2, src:"大陆老题", topic:"场合",
+   text:"Describe an occasion when many people were smiling.\nYou should say:\n• When it happened\n• Who you were with\n• What happened\nAnd explain why most people were smiling.",
+   p3:["Do you think people who like to smile are more friendly?","Why do most people smile in photographs?","Do women smile more than men? Why?","Is smiling important in your culture?","Are there any occasions when people need to pretend to smile?"]},
+  {id:210, part:2, src:"大陆老题", topic:"家人",
+   text:"Describe a time when you felt proud of a family member.\nYou should say:\n• When it happened\n• Who the person is\n• What the person did\nAnd explain why you felt proud of him/her.",
+   p3:["When would parents feel proud of their children?","Should parents reward children? Why and how?","Is it good to reward children too often? Why?","On what occasions would adults be proud of themselves?","Do rewards help a child become better?"]},
+  {id:211, part:2, src:"大陆老题", topic:"物品",
+   text:"Describe something important that has been kept in your family for a long time.\nYou should say:\n• What it is\n• When your family had it\n• How your family got it\nAnd explain why it is important to your family.",
+   p3:["What things do families keep for a long time?","What's the difference between the things valued by people in the past and today?","What kinds of things are kept in museums?","What's the influence of technology on museums?","Why do people visit museums?"]},
+  {id:212, part:2, src:"大陆老题", topic:"旅行",
+   text:"Describe a bicycle/motorcycle/car trip you would like to go on.\nYou should say:\n• Who you would like to go with\n• Where you would like to go\n• When you would like to go\nAnd explain why you would like to go by bicycle/motorcycle/car.",
+   p3:["Which form of vehicle is more popular in your country, bikes, cars or motorcycles?","Do you think air pollution comes mostly from mobile vehicles?","How are the transportation systems in urban areas and rural areas different?","Why do more people own and drive private vehicles now?","What do you think of the future of electric cars?"]},
+  {id:213, part:2, src:"大陆老题", topic:"人物",
+   text:"Describe a person who solved a problem in a smart way.\nYou should say:\n• Who this person is\n• What the problem was\n• How he/she solved it\nAnd explain why you think he/she did it in a smart way.",
+   p3:["Do you think children are born smart or they learn to become smart?","How do children become smart at school?","Why are some people well-rounded and others only good at one thing?","Why does modern society need talents of all kinds?","Is it important for schools to identify and develop each student's talents?"]},
+  {id:214, part:2, src:"大陆老题", topic:"人物/学习",
+   text:"Describe one of your friends who learned something without a teacher.\nYou should say:\n• Who he/she is\n• What he/she learned\n• Why he/she learned this\nAnd explain whether it would be easier to learn from a teacher.",
+   p3:["Is it necessary to keep learning after graduating from school?","Should teachers make learning in their classes fun?","Do you think there are too many subjects for students to learn?","Is it better to focus on a few subjects or to learn many subjects?","Do you think it is good for older adults to continue learning?"]},
+  {id:215, part:2, src:"大陆老题", topic:"音乐",
+   text:"Describe an event you attended in which you didn't enjoy the music played.\nYou should say:\n• What it was\n• Who you went with\n• Why you decided to go there\nAnd explain why you didn't enjoy it.",
+   p3:["What kind of music events do people like today?","Do you think children should receive some musical education?","What are the differences between old and young people's music preferences?","What kind of music events are there in your country?","Why do many people like listening to music while doing sports?"]},
+  {id:216, part:2, src:"大陆老题", topic:"电影/娱乐",
+   text:"Describe a movie you watched and enjoyed recently.\nYou should say:\n• When and where you watched it\n• Who you watched it with\n• What it was about\nAnd explain why you watched this movie.",
+   p3:["What kinds of movies do you think are successful in your country?","What are the factors that make a successful movie?","Do Chinese people prefer to watch domestic movies or foreign movies?","Why do people prefer to watch movies in the cinema?"]},
+  {id:217, part:2, src:"大陆老题", topic:"建筑",
+   text:"Describe an interesting building.\nYou should say:\n• Where it is\n• What it looks like\n• What function it has\nAnd explain why you think it is interesting.",
+   p3:["What types of buildings are popular in your country?","Is it worth spending a lot of money on the exterior appearance of a building?","Is it more important for a building to look good on the outside or on the inside?","Why do people like to visit historical sites?","Is it better to live in a new building or an old one?"]},
+  {id:218, part:2, src:"大陆老题", topic:"创意",
+   text:"Describe a time you needed to use your imagination.\nYou should say:\n• When it was\n• Why you needed to use imagination\n• How difficult or easy it was\nAnd explain how you felt about it.",
+   p3:["Do you think adults can have lots of imagination?","Do you think imagination is essential for scientists?","What kinds of jobs need imagination?","What subjects are helpful for children's imagination?","What games help develop children's imagination?","How important is imagination to children?"]},
+  {id:219, part:2, src:"大陆老题", topic:"人物",
+   text:"Describe a person who often helps others.\nYou should say:\n• Who this person is\n• How often he/she helps others\n• How/why he/she helps others\nAnd how you feel about this person.",
+   p3:["What can children do to help their parents?","Should children help their parents with household chores?","What kind of help do people need when looking for a new job?","Who should people ask for help, colleagues or family members?","Why are employees reluctant to ask their managers for help?"]},
+  {id:220, part:2, src:"大陆老题", topic:"消费",
+   text:"Describe an item on which you spent more than expected.\nYou should say:\n• What it is\n• How much you spent on it\n• Why you bought it\nAnd explain why you think you spent more than expected.",
+   p3:["Do you often buy more than you expected?","What do you think young people spend most of their money on?","Do you think it is important to save money? Why?","Do people buy things they don't need?","What kind of things are people happy to pay a high price for?"]},
+  {id:221, part:2, src:"大陆老题", topic:"经历",
+   text:"Describe a time when you encouraged someone to do something that he/she didn't want to do.\nYou should say:\n• Who he or she is\n• What you encouraged him/her to do\n• How he/she reacted\nAnd explain why you encouraged him/her to do it.",
+   p3:["How can leaders encourage their employees?","When should parents encourage their children?","What kind of encouragement should parents give?","Do you think some people are better than others at persuading?","How can employers encourage their staff?"]},
+  {id:222, part:2, src:"大陆老题", topic:"工作/旅行",
+   text:"Describe a short-term job you want to have in a foreign country.\nYou should say:\n• Where it is\n• How you know of it\n• What the job is\nAnd explain why you want to do it.",
+   p3:["What short-term jobs do young people do in other countries?","What challenges do young people face when working abroad?","What are the benefits of working for an international company?","What personal skills are required to work in an international company?","Why are some people unwilling to work in other countries?"]},
+  {id:223, part:2, src:"大陆老题", topic:"环境",
+   text:"Describe a person who likes to look after the natural world.\nYou should say:\n• Who this person is\n• What he or she does\n• How he or she does it\n• How often he or she does it\nAnd explain how you feel about this person.",
+   p3:["Do you think parents should teach their children how to protect the environment?","What laws about the environment are effective in your country?","Which do you think people prefer, rewards or punishment, when it comes to government intervention in environmental protection?","Is it easy for children in cities to get close to the natural world?","What can people do to protect the natural world?"]},
+  {id:224, part:2, src:"大陆老题", topic:"城市",
+   text:"Describe a city that you think is very interesting/famous.\nYou should say:\n• Where it is\n• What it is famous for\n• How you knew this city\nAnd explain why you think it is very interesting/famous.",
+   p3:["What advantages can tourism bring to a city?","Why do some young people like to live in cities?","Do most elderly people live in the city or in the countryside?","Do you think well-developed tourism will have negative effects on local people?","What are the benefits of urbanization?"]},
+  {id:225, part:2, src:"大陆老题", topic:"城市",
+   text:"Describe a city you enjoyed visiting.\nYou should say:\n• Where it is\n• When you visited it\n• How long you stayed there\n• What you did there\nAnd explain why you enjoyed visiting it.",
+   p3:["What kinds of facilities do big cities have?","Do you think modern cities are suitable for young people or old people?","Before you travel to a city, what factors would you consider?","What are the disadvantages of living in a very famous city?","Do you prefer to visit well-developed cities or cities with a long history?","For those who live in cities, is it because they want to or have to?"]},
+  // ── Part 2+3 非大陆新题 ──────────────────────────────────
+  {id:301, part:2, src:"非大陆新题", topic:"旅行",
+   text:"Describe a place you would like to visit in your free time.\nYou should say:\n• Where it is\n• What you will do there\n• How long you will stay there\nAnd explain why you would like to visit it.",
+   p3:["Why do you think some people choose not to travel abroad?","Do you think a gap period in life is important?"]},
+  {id:302, part:2, src:"非大陆新题", topic:"食物",
+   text:"Describe a special cake you received from others.\nYou should say:\n• When it happened\n• Where it happened\n• Who you got the cake from\nAnd explain why it's a special cake.",
+   p3:["What are the differences between special food in China and other countries?","Is there any food in your country that is eaten at special times or on special occasions?","Why are some people willing to spend a lot of money on meals on special days?","Do you think it's good to communicate when eating with your family?","In your country, do people nowadays cook at home as frequently as people did in the past?"]},
+  {id:303, part:2, src:"非大陆新题", topic:"工作",
+   text:"Describe a person who works in a successful company.\nYou should say:\n• Who he/she is\n• What he/she does in the company\n• What business the company does\nAnd explain why you think it is a successful company.",
+   p3:["Do you think governments should provide financial support to companies?","Do you think companies should donate money to help society?","Do you think customer satisfaction is important for a company?"]},
+  {id:304, part:2, src:"非大陆新题", topic:"语言学习",
+   text:"Describe a thing you did to learn another language.\nYou should say:\n• What language you learned\n• What you did\n• How it helped you learn the language\nAnd how you felt about it.",
+   p3:["What difficulties do people face when learning a language?","Do you think language learning is important? Why?","Which is better, to study a language alone or to study it in a group? Why?","What's the best way to learn a language?","What are the advantages and disadvantages of learning a language?","Some people think that technology has made it unnecessary to learn languages. What do you think?"]},
+  {id:305, part:2, src:"非大陆新题", topic:"自然/地理",
+   text:"Describe an important river/lake in your country.\nYou should say:\n• Where it is located\n• How big/long it is\n• What it looks like\nAnd explain why it is important.",
+   p3:["Are rivers and lakes important to a country?","What are the popular water sports in your country?","Are rivers and lakes good for transport? Why?","How do rivers and lakes affect local tourism?","How can rivers and lakes benefit local people?"]},
+  {id:306, part:2, src:"非大陆新题", topic:"休闲",
+   text:"Describe a special day out that cost you little money.\nYou should say:\n• When the day was\n• Where you went\n• How much you spent\nAnd explain how you feel about the day.",
+   p3:["Do people like to spend their leisure time out in your country?","How do people spend their leisure time in your country?","How does technology affect the way people spend their leisure time?","Do you think only old people have time for leisure?","Why do people like to have days off?"]},
+  {id:307, part:2, src:"非大陆新题", topic:"活动/组织",
+   text:"Describe a time when you organized a happy event successfully.\nYou should say:\n• What the event was\n• How you prepared for it\n• Who helped you to organise it\nAnd explain why you think it was a successful event.",
+   p3:["How can parents help children to be organized?","On what occasions do people need to be organized?","Does everything need to be well prepared?","Do people need others' help when organizing things?","How would you feel when you were not well prepared for something?","Do you prefer to prepare and organize an activity or just take part in an activity?"]},
+  {id:308, part:2, src:"非大陆新题", topic:"目标",
+   text:"Describe a long-term goal you would like to achieve.\nYou should say:\n• How long you have had this goal\n• What the goal is\n• How you will achieve it\nAnd explain why you set this goal.",
+   p3:["What goals should a society have?","Do people need to have goals?","What goals do people at your age have?","Is it necessary to give advice to children?","What goals do young people usually have?","What should people do to achieve their goals?"]},
+  {id:309, part:2, src:"非大陆新题", topic:"交通",
+   text:"Describe a time when you were stuck in a traffic jam for a very long time.\nYou should say:\n• When it happened\n• Where you were stuck\n• What you did while waiting\nAnd explain how you felt in the traffic jam.",
+   p3:["How can we solve the traffic jam problem?","Do you think developing public transport can solve traffic jam problems?","Do you think the highways will help reduce traffic jams?","What are good ways to manage traffic?","Do you like to use public transport?","Would you rather be in a car or a bus in a traffic jam?"]},
+];
+
+// ============================================================
+// STATE
+// ============================================================
+let state = {
+  selectedQuestion: null,
+  timerRunning: false,
+  timerSeconds: 0,
+  timerInterval: null,
+  currentScore: null,
+  history: [],
+  radarChartInst: null,
+  trendChartInst: null,
+  avgRadarChartInst: null,
+};
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // Load saved API key
+  const savedKey = getStorage('ielts_apikey');
+  if (savedKey) document.getElementById('apiKeyInput').value = savedKey;
+  document.getElementById('apiKeyInput').addEventListener('input', e => {
+    setStorage('ielts_apikey', e.target.value.trim());
+  });
+
+  // Load history
+  const savedHistory = getStorage('ielts_history');
+  if (savedHistory) state.history = JSON.parse(savedHistory);
+
+  buildTopicFilters();
+  renderPracQuestions();
+  renderQuestions();
+  updateHistCount();
+});
+
+// ============================================================
+// STORAGE HELPERS (using cookies since localStorage blocked)
+// ============================================================
+function setStorage(key, val) {
+  try { localStorage.setItem(key, val); } catch(e) {}
+}
+function getStorage(key) {
+  try { return localStorage.getItem(key); } catch(e) { return null; }
+}
+function saveHistory() {
+  setStorage('ielts_history', JSON.stringify(state.history));
+  updateHistCount();
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  if (name === 'history') renderHistory();
+  if (name === 'stats') renderStats();
+}
+
+// ============================================================
+// TOPIC FILTERS
+// ============================================================
+function buildTopicFilters() {
+  const topics = [...new Set(QUESTIONS.map(q => q.topic))].sort();
+  ['pracTopic','qTopic'].forEach(id => {
+    const sel = document.getElementById(id);
+    topics.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t; opt.textContent = t;
+      sel.appendChild(opt);
+    });
+  });
+  document.getElementById('totalQCount').textContent = QUESTIONS.length;
+}
+function srcBadgeClass(src) {
+  if (!src) return 'badge-blue';
+  if (src.includes('新题')) return 'badge-green';
+  if (src.includes('老题')) return 'badge-amber';
+  if (src.includes('非大陆')) return 'badge-purple';
+  return 'badge-blue';
+}
+
+function getP3Questions() {
+  const p3Qs = [];
+  let idCounter = 100000;
+  QUESTIONS.filter(q => q.part === 2 && q.p3).forEach(q => {
+    q.p3.forEach((p3Text, idx) => {
+      p3Qs.push({
+        id: idCounter++,
+        part: 3,
+        src: q.src,
+        topic: q.topic,
+        text: p3Text,
+      });
+    });
+  });
+  return p3Qs;
+}
+
+
+
+// ============================================================
+// PRACTICE PAGE
+// ============================================================
+function filterPracQuestions() {
+  renderPracQuestions();
+}
+function renderPracQuestions() {
+  const part = document.getElementById('pracPart').value;
+  const topic = document.getElementById('pracTopic').value;
+  const src = document.getElementById('pracSrc').value;
+
+  let qs = [];
+  if (part === '3') {
+    qs = getP3Questions();
+  } else {
+    qs = QUESTIONS;
+    if (part) qs = qs.filter(q => String(q.part) === part);
+  }
+  if (topic) qs = qs.filter(q => q.topic === topic);
+  if (src) qs = qs.filter(q => q.src === src);
+
+  // Update question count
+  const countEl = document.getElementById('pracQuestionCount');
+  if (countEl) countEl.textContent = '共 ' + qs.length + ' 题';
+
+  const grid = document.getElementById('pracQuestionGrid');
+  grid.innerHTML = '';
+  qs.forEach(q => {
+    const div = document.createElement('div');
+    div.className = 'q-card' + (state.selectedQuestion && state.selectedQuestion.id === q.id ? ' selected' : '');
+
+    let displayText = q.text;
+    if (q.part === 2) displayText = q.topic;
+    else if (q.part === 3) displayText = q.text;
+    else displayText = (q.questions && q.questions[0]) || q.text;
+
+    let badgesHTML = `<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+      <span class="badge ${partBadgeClass(q.part)}">Part ${q.part}</span>`;
+    if (q.part !== 1) {
+      badgesHTML += `<span class="badge badge-blue">${q.topic}</span>`;
+    }
+    badgesHTML += ` <span class="badge ${srcBadgeClass(q.src)}" style="font-size:10px">${q.src||''}</span></div>`;
+
+    div.innerHTML = badgesHTML + `<h3>${truncate(displayText, 60)}</h3>`;
+    div.onclick = () => selectQuestion(q);
+    grid.appendChild(div);
+  });
+}
+function partBadgeClass(part) {
+  return part === 1 ? 'badge-green' : part === 2 ? 'badge-amber' : 'badge-purple';
+}
+function truncate(str, n) {
+  return str.length > n ? str.slice(0, n) + '...' : str;
+}
+function randomQuestion() {
+  const part = document.getElementById('pracPart').value;
+  const topic = document.getElementById('pracTopic').value;
+  const src = document.getElementById('pracSrc').value;
+
+  let qs = [];
+  if (part === '3') {
+    qs = getP3Questions();
+  } else {
+    qs = QUESTIONS;
+    if (part) qs = qs.filter(q => String(q.part) === part);
+  }
+  if (topic) qs = qs.filter(q => q.topic === topic);
+  if (src) qs = qs.filter(q => q.src === src);
+
+  if (!qs.length) return;
+  const q = qs[Math.floor(Math.random() * qs.length)];
+  selectQuestion(q);
+}
+function selectQuestion(q) {
+  state.selectedQuestion = q;
+  renderPracQuestions();
+  document.getElementById('answerArea').style.display = 'block';
+  document.getElementById('scoreResult').style.display = 'none';
+
+  // Format question display
+  let questionHTML = '';
+  if (q.part === 2) {
+    // Cue card format
+    const lines = q.text.split('\n');
+    questionHTML = `<div style="font-size:15px;font-weight:500;margin-bottom:10px">${lines[0]}</div>`;
+    if (lines.length > 1) {
+      questionHTML += `<div style="font-size:13px;color:var(--text-muted);line-height:2;background:var(--bg);padding:10px 14px;border-radius:var(--radius-sm);border-left:3px solid var(--amber)">`;
+      questionHTML += lines.slice(1).map(l => l.trim() ? l : '').filter(Boolean).join('<br>');
+      questionHTML += '</div>';
+    }
+    // P3 questions
+    if (q.p3 && q.p3.length) {
+      questionHTML += `<details style="margin-top:12px"><summary style="cursor:pointer;font-size:12px;color:var(--blue);font-weight:500">Part 3 讨论题 (${q.p3.length})</summary><ul style="margin-top:8px;padding-left:16px;font-size:12px;color:var(--text-muted);line-height:2">${q.p3.map(s=>`<li>${s}</li>`).join('')}</ul></details>`;
+    }
+  } else if (q.part === 3) {
+    // P3 question display
+    questionHTML = `<div style="font-size:15px;font-weight:500;margin-bottom:10px">${q.text}</div>`;
+    questionHTML += `<div style="font-size:12px;color:var(--text-muted);margin-top:8px">来源话题：${q.topic}</div>`;
+  } else if (q.part === 1 && q.questions && q.questions.length) {
+    questionHTML = `<div style="font-size:14px;font-weight:500;margin-bottom:10px">${q.topic}</div>`;
+    questionHTML += `<ul style="padding-left:16px;font-size:13px;color:var(--text-muted);line-height:2.1">${q.questions.map(s=>`<li>${s}</li>`).join('')}</ul>`;
+  } else {
+    questionHTML = `<div style="font-size:15px;font-weight:500">${q.text}</div>`;
+  }
+  document.getElementById('pracQuestion').innerHTML = questionHTML;
+
+  document.getElementById('pracPartBadge').textContent = 'Part ' + q.part;
+  document.getElementById('pracPartBadge').className = 'badge ' + partBadgeClass(q.part);
+  document.getElementById('pracTopicBadge').textContent = q.topic;
+  document.getElementById('timerHint').textContent =
+    q.part === 2 ? 'Part 2 建议 2 分钟' :
+    q.part === 1 ? 'Part 1 建议 1 分钟' : 'Part 3 建议 2 分钟';
+  document.getElementById('clearSelBtn').style.display = '';
+  resetTimer();
+  document.getElementById('answerInput').focus();
+  document.getElementById('answerArea').scrollIntoView({behavior:'smooth'});
+}
+function clearPracSelection() {
+  state.selectedQuestion = null;
+  document.getElementById('answerArea').style.display = 'none';
+  document.getElementById('scoreResult').style.display = 'none';
+  document.getElementById('clearSelBtn').style.display = 'none';
+  stopTimer();
+  renderPracQuestions();
+}
+function clearAnswer() {
+  document.getElementById('answerInput').value = '';
+}
+
+// ============================================================
+// TIMER
+// ============================================================
+function toggleTimer() {
+  if (state.timerRunning) {
+    stopTimer();
+    document.getElementById('timerBtn').textContent = '继续计时';
+  } else {
+    startTimer();
+    document.getElementById('timerBtn').textContent = '暂停';
+  }
+}
+function startTimer() {
+  state.timerRunning = true;
+  state.timerInterval = setInterval(() => {
+    state.timerSeconds++;
+    updateTimerDisplay();
+  }, 1000);
+}
+function stopTimer() {
+  state.timerRunning = false;
+  clearInterval(state.timerInterval);
+}
+function resetTimer() {
+  stopTimer();
+  state.timerSeconds = 0;
+  document.getElementById('timerBtn').textContent = '开始计时';
+  updateTimerDisplay();
+}
+function updateTimerDisplay() {
+  const m = Math.floor(state.timerSeconds / 60);
+  const s = state.timerSeconds % 60;
+  const el = document.getElementById('pracTimer');
+  el.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  const part = state.selectedQuestion ? state.selectedQuestion.part : 1;
+  const limit = part === 1 ? 60 : 120;
+  el.className = 'timer' + (state.timerSeconds > limit * 1.5 ? ' danger' : state.timerSeconds > limit ? ' warning' : '');
+}
+
+// ============================================================
+// AI SCORING
+// ============================================================
+async function submitAnswer() {
+  const answer = document.getElementById('answerInput').value.trim();
+  if (!answer) { alert('请先输入你的答案'); return; }
+  if (!state.selectedQuestion) { alert('请先选择一个题目'); return; }
+  
+  const apiKey = document.getElementById('apiKeyInput').value.trim();
+  if (!apiKey) { alert('请先在左侧填写 DeepSeek API Key'); return; }
+
+  stopTimer();
+  document.getElementById('scoringLoader').classList.add('show');
+  document.getElementById('scoreResult').style.display = 'none';
+
+  const prompt = buildScoringPrompt(state.selectedQuestion, answer);
+  
+  try {
+    const result = await callDeepSeek(apiKey, prompt);
+    const data = parseScoreResult(result);
+    state.currentScore = { question: state.selectedQuestion, answer, data, time: new Date().toISOString(), duration: state.timerSeconds };
+    renderScoreResult(data);
+  } catch (err) {
+    console.error(err);
+    alert('评分失败：' + err.message + '\n请检查 API Key 是否正确');
+  } finally {
+    document.getElementById('scoringLoader').classList.remove('show');
+  }
+}
+
+function buildScoringPrompt(q, answer) {
+  const part = q.part;
+  const questionText = part === 2 ? q.text.split('\n')[0] : (q.questions && q.questions.join(' / ')) || q.text;
+  const partDesc = part === 2 ? ' (Long turn — candidate should speak for 1-2 minutes)' :
+                    part === 3 ? ' (Discussion questions — candidate should give developed answers with analysis and examples)' :
+                    ' (Short answer questions)';
+  return `You are an IELTS examiner. Please evaluate the following speaking answer according to official IELTS Speaking band descriptors.
+
+QUESTION TYPE: Part ${part}${partDesc}
+TOPIC: ${q.topic}
+QUESTION: ${questionText}
+
+CANDIDATE'S ANSWER: ${answer}
+
+Please respond with ONLY a JSON object (no markdown, no extra text) in this exact format:
+{
+  "overall": 6.5,
+  "vocab": 6.5,
+  "fluency": 7.0,
+  "grammar": 6.0,
+  "pronunciation": 6.5,
+  "overallComment": "A concise 2-3 sentence overall assessment in Chinese.",
+  "strengths": ["strength 1 in Chinese", "strength 2 in Chinese", "strength 3 in Chinese"],
+  "weaknesses": ["weakness 1 in Chinese", "weakness 2 in Chinese", "weakness 3 in Chinese"],
+  "vocabSuggestions": ["original word/phrase → better alternative (brief explanation in Chinese)", "original word/phrase → better alternative"],
+  "improvedAnswer": "A complete improved version of the answer in English with higher band vocabulary and structure.",
+  "improvedExplain": "Explanation in Chinese of what was improved and why."
+}
+
+IELTS band scores must be one of: 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0
+Be fair and accurate. Do not over-inflate or under-score.`;
+}
+
+async function callDeepSeek(apiKey, prompt) {
+  const resp = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+      max_tokens: 1200,
+    })
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'HTTP ' + resp.status);
+  }
+  const data = await resp.json();
+  return data.choices[0].message.content;
+}
+
+function parseScoreResult(raw) {
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('返回格式错误，无法解析 JSON');
+  return JSON.parse(jsonMatch[0]);
+}
+
+// ============================================================
+// RENDER SCORE
+// ============================================================
+function renderScoreResult(data) {
+  document.getElementById('overallScore').textContent = data.overall.toFixed(1);
+  document.getElementById('s-vocab').textContent = data.vocab.toFixed(1);
+  document.getElementById('s-fluency').textContent = data.fluency.toFixed(1);
+  document.getElementById('s-grammar').textContent = data.grammar.toFixed(1);
+  document.getElementById('s-pronun').textContent = data.pronunciation.toFixed(1);
+  document.getElementById('overallComment').textContent = data.overallComment || '';
+  
+  // Strengths
+  const sEl = document.getElementById('feedStrengths');
+  sEl.innerHTML = (data.strengths || []).map(s => `<li><span class="dot dot-green"></span>${s}</li>`).join('');
+  // Weaknesses
+  const wEl = document.getElementById('feedWeaknesses');
+  wEl.innerHTML = (data.weaknesses || []).map(w => `<li><span class="dot dot-amber"></span>${w}</li>`).join('');
+  // Vocab
+  const vEl = document.getElementById('feedVocab');
+  vEl.innerHTML = (data.vocabSuggestions || []).map(v => `<li><span class="dot dot-blue"></span>${v}</li>`).join('');
+  
+  document.getElementById('improvedAnswer').textContent = data.improvedAnswer || '';
+  document.getElementById('improvedExplain').textContent = data.improvedExplain || '';
+  
+  // Radar chart
+  drawRadarChart(data);
+  
+  // Switch to overview tab
+  switchResultTab('overview', document.querySelector('#scoreResult .tab'));
+  
+  document.getElementById('scoreResult').style.display = '';
+  document.getElementById('scoreResult').scrollIntoView({ behavior: 'smooth' });
+}
+
+function drawRadarChart(data) {
+  const ctx = document.getElementById('radarChart').getContext('2d');
+  if (state.radarChartInst) state.radarChartInst.destroy();
+  state.radarChartInst = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: ['词汇资源', '流利连贯', '语法范围', '发音'],
+      datasets: [{
+        data: [data.vocab, data.fluency, data.grammar, data.pronunciation],
+        backgroundColor: 'rgba(24,95,165,0.15)',
+        borderColor: '#185FA5',
+        borderWidth: 1.5,
+        pointBackgroundColor: '#185FA5',
+        pointRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      scales: { r: { min: 4, max: 9, ticks: { stepSize: 1, font: { size: 11 } }, pointLabels: { font: { size: 12 } } } },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+function switchResultTab(name, el) {
+  document.querySelectorAll('#scoreResult .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  ['overview','detail','improved'].forEach(t => {
+    document.getElementById('resultTab-' + t).style.display = t === name ? '' : 'none';
+  });
+}
+
+// ============================================================
+// SAVE & CLEAR
+// ============================================================
+function saveToHistory() {
+  if (!state.currentScore) return;
+  const rec = {
+    id: Date.now(),
+    questionId: state.currentScore.question.id,
+    questionText: state.currentScore.question.text,
+    part: state.currentScore.question.part,
+    topic: state.currentScore.question.topic,
+    answer: state.currentScore.answer,
+    score: state.currentScore.data,
+    duration: state.currentScore.duration,
+    time: state.currentScore.time,
+  };
+  state.history.unshift(rec);
+  saveHistory();
+  alert('已保存到历史记录！');
+}
+
+function practiceAgain() {
+  document.getElementById('scoreResult').style.display = 'none';
+  document.getElementById('answerInput').value = '';
+  resetTimer();
+  state.selectedQuestion = null;
+  renderPracQuestions();
+  document.getElementById('answerArea').style.display = 'none';
+  document.getElementById('clearSelBtn').style.display = 'none';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+// ============================================================
+// QUESTIONS PAGE
+// ============================================================
+function filterQuestions() {
+  renderQuestions();
+}
+function renderQuestions() {
+  const part = document.getElementById('qPart').value;
+  const topic = document.getElementById('qTopic').value;
+  const search = document.getElementById('qSearch').value.toLowerCase();
+  let qs = [];
+  if (part === '3') {
+    qs = getP3Questions();
+  } else {
+    qs = QUESTIONS;
+    if (part) qs = qs.filter(q => String(q.part) === part);
+  }
+  if (topic) qs = qs.filter(q => q.topic === topic);
+  if (search) qs = qs.filter(q => q.text.toLowerCase().includes(search) || q.topic.toLowerCase().includes(search) || (q.questions||[]).some(s=>s.toLowerCase().includes(search)));
+
+  // Also search in P3 questions when showing all
+  if (!part && search) {
+    const p3Qs = getP3Questions();
+    const matchedP3 = p3Qs.filter(q => q.text.toLowerCase().includes(search) || q.topic.toLowerCase().includes(search));
+    qs = qs.concat(matchedP3);
+  }
+
+  const grid = document.getElementById('questionGrid');
+  grid.innerHTML = '';
+  qs.forEach(q => {
+    const div = document.createElement('div');
+    div.className = 'q-card';
+
+    let displayText = q.text;
+    if (q.part === 2) displayText = q.topic;
+    else if (q.part === 3) displayText = '[P3] ' + q.text;
+    else displayText = q.text;
+
+    let bodyHTML = '';
+    if (q.part === 1) {
+      bodyHTML = `<div style="font-size:13px;line-height:1.6">${displayText}</div>`;
+      if (q.questions && q.questions.length) {
+        bodyHTML += `<ul style="margin-top:6px;padding-left:14px;font-size:12px;color:var(--text-muted);line-height:1.9">${q.questions.map(s=>`<li>${s}</li>`).join('')}</ul>`;
+      }
+    } else if (q.part === 2) {
+      bodyHTML = `<div style="font-size:13px;line-height:1.6;font-weight:500">${displayText}</div>`;
+      bodyHTML += `<div style="font-size:12px;color:var(--text-muted);margin-top:4px">${q.text.split('\n')[0]}</div>`;
+      if (q.p3 && q.p3.length) {
+        bodyHTML += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--blue)">Part 3 (${q.p3.length} 题)</summary><ul style="margin-top:4px;padding-left:14px;font-size:11px;color:var(--text-muted);line-height:1.9">${q.p3.map(s=>`<li>${s}</li>`).join('')}</ul></details>`;
+      }
+    } else if (q.part === 3) {
+      bodyHTML = `<div style="font-size:13px;line-height:1.6">${displayText}</div>`;
+    }
+
+    let badgesHTML = `<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+      <span class="badge ${partBadgeClass(q.part)}">Part ${q.part}</span>`;
+    if (q.part !== 1) {
+      badgesHTML += `<span class="badge badge-blue">${q.topic}</span>`;
+    }
+    badgesHTML += ` <span class="badge ${srcBadgeClass(q.src)}" style="font-size:10px">${q.src||''}</span></div>`;
+
+    const qid = q.part === 3 ? q.parentId || q.id : q.id;
+    div.innerHTML = badgesHTML + `
+    ${bodyHTML}
+    <div style="margin-top:10px">
+      <button class="btn-sm" onclick="goToPracticeWith(${qid})">去练习 ↗</button>
+    </div>`;
+    grid.appendChild(div);
+  });
+  document.getElementById('totalQCount').textContent = QUESTIONS.length;
+}
+function goToPracticeWith(qid) {
+  const q = QUESTIONS.find(q => q.id === qid);
+  if (!q) return;
+  showPage('practice');
+  selectQuestion(q);
+}
+
+// ============================================================
+// TEMPLATES
+// ============================================================
+function switchTplTab(name, el) {
+  ['part1','part2','part3','phrases'].forEach(t => {
+    document.getElementById('tpl-' + t).style.display = t === name ? '' : 'none';
+  });
+  document.querySelectorAll('#page-templates .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+
+// ============================================================
+// HISTORY
+// ============================================================
+function updateHistCount() {
+  document.getElementById('histCount').textContent = state.history.length;
+}
+function renderHistory() {
+  const filter = document.getElementById('histFilter').value;
+  let recs = state.history;
+  if (filter) recs = recs.filter(r => String(r.part) === filter);
+  document.getElementById('histCount').textContent = state.history.length;
+  const el = document.getElementById('historyList');
+  if (!recs.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>还没有练习记录</p></div>';
+    return;
+  }
+  el.innerHTML = recs.map(r => {
+    const d = new Date(r.time);
+    const dateStr = d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+    const overall = r.score ? r.score.overall : '-';
+    return `<div class="hist-item">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;gap:6px;margin-bottom:4px">
+          <span class="badge ${partBadgeClass(r.part)}">Part ${r.part}</span>
+          <span class="badge badge-blue">${r.topic}</span>
+        </div>
+        <div class="q-text">${r.questionText}</div>
+        <div class="meta">${dateStr} · ${formatDuration(r.duration)}</div>
+        ${r.score ? `<div class="hist-detail">词汇 ${r.score.vocab} · 流利 ${r.score.fluency} · 语法 ${r.score.grammar} · 发音 ${r.score.pronunciation}</div>` : ''}
+      </div>
+      <div>
+        <div class="score-badge">${overall}</div>
+        <button class="btn-sm" style="margin-top:6px" onclick="deleteHistItem(${r.id})">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function formatDuration(sec) {
+  if (!sec) return '';
+  const m = Math.floor(sec/60), s = sec%60;
+  return m > 0 ? `${m}分${s}秒` : `${s}秒`;
+}
+function deleteHistItem(id) {
+  state.history = state.history.filter(r => r.id !== id);
+  saveHistory();
+  renderHistory();
+}
+function clearHistory() {
+  if (!confirm('确定要清空所有历史记录吗？此操作不可恢复。')) return;
+  state.history = [];
+  saveHistory();
+  renderHistory();
+}
+
+// ============================================================
+// STATS
+// ============================================================
+function renderStats() {
+  const recs = state.history.filter(r => r.score);
+  document.getElementById('statTotal').textContent = state.history.length;
+  if (!recs.length) {
+    document.getElementById('statAvg').textContent = '-';
+    document.getElementById('statBest').textContent = '-';
+    return;
+  }
+  const scores = recs.map(r => r.score.overall);
+  const avg = scores.reduce((a,b) => a+b, 0) / scores.length;
+  const best = Math.max(...scores);
+  document.getElementById('statAvg').textContent = avg.toFixed(1);
+  document.getElementById('statBest').textContent = best.toFixed(1);
+  
+  // Trend chart
+  const recent = [...recs].reverse().slice(-20);
+  const tCtx = document.getElementById('trendChart').getContext('2d');
+  if (state.trendChartInst) state.trendChartInst.destroy();
+  state.trendChartInst = new Chart(tCtx, {
+    type: 'line',
+    data: {
+      labels: recent.map(r => new Date(r.time).toLocaleDateString('zh-CN', {month:'numeric',day:'numeric'})),
+      datasets: [{
+        label: '综合分',
+        data: recent.map(r => r.score.overall),
+        borderColor: '#185FA5',
+        backgroundColor: 'rgba(24,95,165,0.08)',
+        borderWidth: 1.5,
+        tension: 0.3,
+        pointRadius: 3,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      scales: { y: { min: 4, max: 9, ticks: { stepSize: 0.5 } } },
+      plugins: { legend: { display: false } }
+    }
+  });
+  
+  // Avg radar
+  const avgVocab = recs.reduce((a,r) => a+r.score.vocab, 0)/recs.length;
+  const avgFluency = recs.reduce((a,r) => a+r.score.fluency, 0)/recs.length;
+  const avgGrammar = recs.reduce((a,r) => a+r.score.grammar, 0)/recs.length;
+  const avgPronun = recs.reduce((a,r) => a+r.score.pronunciation, 0)/recs.length;
+  const rCtx = document.getElementById('avgRadarChart').getContext('2d');
+  if (state.avgRadarChartInst) state.avgRadarChartInst.destroy();
+  state.avgRadarChartInst = new Chart(rCtx, {
+    type: 'radar',
+    data: {
+      labels: ['词汇资源', '流利连贯', '语法范围', '发音'],
+      datasets: [{
+        label: '平均分',
+        data: [avgVocab, avgFluency, avgGrammar, avgPronun],
+        backgroundColor: 'rgba(59,109,17,0.15)',
+        borderColor: '#3B6D11',
+        borderWidth: 1.5,
+        pointBackgroundColor: '#3B6D11',
+        pointRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      scales: { r: { min: 4, max: 9, ticks: { stepSize: 1, font:{size:11} }, pointLabels: { font:{size:12} } } },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+// ============================================================
+// EXPORT
+// ============================================================
+function exportJSON() {
+  const data = { history: state.history, exportedAt: new Date().toISOString() };
+  downloadFile('ielts-speaking-data.json', JSON.stringify(data, null, 2), 'application/json');
+}
+function exportCSV() {
+  const headers = ['日期','Part','话题','题目','综合分','词汇','流利','语法','发音','用时(秒)','答案'];
+  const rows = state.history.map(r => [
+    new Date(r.time).toLocaleString('zh-CN'),
+    r.part, r.topic,
+    '"' + r.questionText.replace(/"/g, '""') + '"',
+    r.score ? r.score.overall : '',
+    r.score ? r.score.vocab : '',
+    r.score ? r.score.fluency : '',
+    r.score ? r.score.grammar : '',
+    r.score ? r.score.pronunciation : '',
+    r.duration || '',
+    '"' + (r.answer || '').replace(/"/g, '""') + '"'
+  ]);
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+  downloadFile('ielts-speaking-data.csv', '\uFEFF' + csv, 'text/csv');
+}
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  doc.setFont('helvetica');
+  doc.setFontSize(16);
+  doc.text('IELTS Speaking Practice Report', 20, 20);
+  doc.setFontSize(11);
+  doc.text('Generated: ' + new Date().toLocaleString(), 20, 30);
+  doc.text('Total records: ' + state.history.length, 20, 38);
+  
+  let y = 50;
+  state.history.slice(0, 30).forEach((r, i) => {
+    if (y > 270) { doc.addPage(); y = 20; }
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${i+1}. [Part ${r.part}] ${r.questionText.slice(0,60)}...`, 20, y);
+    y += 6;
+    doc.setFont('helvetica', 'normal');
+    if (r.score) {
+      doc.text(`Score: ${r.score.overall} | Vocab:${r.score.vocab} Fluency:${r.score.fluency} Grammar:${r.score.grammar} Pronunciation:${r.score.pronunciation}`, 20, y);
+      y += 6;
+    }
+    doc.text('Date: ' + new Date(r.time).toLocaleString(), 20, y);
+    y += 10;
+  });
+  doc.save('ielts-speaking-report.pdf');
+}
+
+function downloadFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.history && Array.isArray(data.history)) {
+        const merged = [...data.history, ...state.history];
+        const seen = new Set();
+        state.history = merged.filter(r => {
+          if (seen.has(r.id)) return false;
+          seen.add(r.id); return true;
+        });
+        saveHistory();
+        alert('导入成功！共 ' + state.history.length + ' 条记录');
+      } else {
+        alert('文件格式不正确');
+      }
+    } catch(e) { alert('解析失败：' + e.message); }
+  };
+  reader.readAsText(file);
+}
+</script>
+</body>
+</html>
