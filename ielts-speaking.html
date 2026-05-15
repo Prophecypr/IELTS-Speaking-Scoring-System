@@ -239,8 +239,13 @@ function importQuestionBank(event) {
     <span class="nav-icon">⬇️</span> 导出数据
   </div>
   <div class="api-key-area">
-    <label>DeepSeek API Key</label>
-    <input type="text" id="apiKeyInput" placeholder="sk-..." />
+    <label>API 提供商</label>
+    <select id="apiProvider" style="font-size:13px;padding:6px 10px;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);outline:none;width:100%;margin-bottom:8px">
+      <option value="deepseek">DeepSeek 官方</option>
+      <option value="siliconflow">硅基流动 (SiliconFlow)</option>
+    </select>
+    <label style="margin-top:8px">API Key</label>
+    <input type="text" id="apiKeyInput" placeholder="填写对应平台的 API Key" style="width:100%" />
   </div>
 </nav>
 
@@ -263,9 +268,6 @@ function importQuestionBank(event) {
           <option value="2">Part 2</option>
           <option value="3">Part 3</option>
         </select>
-        <select id="pracTopic" onchange="filterPracQuestions()">
-          <option value="">全部话题</option>
-        </select>
         <select id="pracSrc" onchange="filterPracQuestions()">
           <option value="">新题+老题</option>
           <option value="5-8月新题">5-8月新题</option>
@@ -282,9 +284,6 @@ function importQuestionBank(event) {
     
     <!-- Answer area (shown after question selected) -->
     <div class="card" id="answerArea" style="display:none; margin-top:12px">
-      <div class="practice-meta" style="justify-content:center">
-        <span class="badge" id="pracPartBadge"></span>
-        <span class="badge badge-blue" id="pracTopicBadge"></span>
         <button class="btn-sm" onclick="speakQuestion()" title="播放题目音频" style="font-size:14px">🔊</button>
       </div>
       <div class="practice-q" id="pracQuestion"></div>
@@ -300,7 +299,7 @@ function importQuestionBank(event) {
         <button class="btn-primary" onclick="submitAnswer()">✓ 提交并评分</button>
         <button onclick="clearAnswer()">清空</button>
         <button class="btn-sm" id="speechInputBtn" onclick="toggleSpeechInput()">🎤 语音输入</button>
-        <button class="btn-sm" onclick="startP1Guide()" id="p1GuideBtn" style="display:none">📝 逐题回答模式</button>
+        
       </div>
     </div>
     
@@ -398,9 +397,6 @@ function importQuestionBank(event) {
         <option value="1">Part 1</option>
         <option value="2">Part 2</option>
         <option value="3">Part 3</option>
-      </select>
-      <select id="qTopic" onchange="filterQuestions()">
-        <option value="">全部话题</option>
       </select>
       <input type="text" id="qSearch" placeholder="搜索题目..." oninput="filterQuestions()" style="min-width:180px" />
     </div>
@@ -586,8 +582,11 @@ function importQuestionBank(event) {
       <textarea id="examAnswerInput" placeholder="在这里输入你的答案..." rows="5" style="width:100%;font-size:14px;padding:12px;border:0.5px solid var(--border-md);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;outline:none;line-height:1.6"></textarea>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-primary" id="examActionBtn" onclick="examAction()">完成此题，下一题 →</button>
+        <button class="btn-sm" id="examNextSubBtn" onclick="examP1NextSub()" style="display:none">下一小题 →</button>
         <button class="btn-sm" onclick="toggleExamTimer()" id="examTimerBtn">开始计时</button>
         <button class="btn-sm" onclick="speakExamQuestion()" id="examSpeakBtn" style="font-size:14px">🔊</button>
+        <button class="btn-sm" onclick="showExamQuestionArea()" id="examShowBtn" style="display:none">👁 显示题目</button>
+        <button class="btn-sm" onclick="hideExamQuestion()" id="examHideBtn" style="display:none">🙈 隐藏题目</button>
       </div>
     </div>
     <div class="card" id="examResultCard" style="display:none">
@@ -1190,26 +1189,17 @@ function selectQuestion(q) {
   } else if (q.part === 1) {
     questionHTML = `<div style="font-size:20px;font-weight:600;margin-bottom:10px">${q.topic}</div>`;
     if (q.questions && q.questions.length) {
-      questionHTML += `<ul style="padding-left:16px;font-size:13px;color:var(--text-muted);line-height:2.1">${q.questions.map(s=>`<li>${s}</li>`).join('')}</ul>`;
+      questionHTML += `<ul style="padding-left:16px;font-size:18px;font-weight:600;color:var(--text);line-height:2.4">${q.questions.map(s=>`<li>${s}</li>`).join('')}</ul>`;
     }
   } else {
     questionHTML = `<div style="font-size:20px;font-weight:600">${q.text}</div>`;
   }
   document.getElementById('pracQuestion').innerHTML = questionHTML;
 
-  document.getElementById('pracPartBadge').textContent = 'Part ' + q.part;
-  document.getElementById('pracPartBadge').className = 'badge ' + partBadgeClass(q.part);
-  document.getElementById('pracTopicBadge').textContent = q.topic;
-  document.getElementById('timerHint').textContent =
-    q.part === 2 ? 'Part 2 建议 2 分钟' :
-    q.part === 1 ? 'Part 1 建议 1 分钟' : 'Part 3 建议 2 分钟';
-  document.getElementById('clearSelBtn').style.display = '';
-  resetTimer();
-  // Show/hide P1 guide button
-  if (q.part === 1 && q.questions && q.questions.length > 1) {
-    document.getElementById('p1GuideBtn').style.display = '';
+  // P1: always use guide mode
+  if (q.part === 1 && q.questions && q.questions.length > 0) {
+    startP1Guide();
   } else {
-    document.getElementById('p1GuideBtn').style.display = 'none';
     document.getElementById('p1GuideArea').style.display = 'none';
   }
   document.getElementById('answerInput').focus();
@@ -1282,27 +1272,34 @@ function submitP1GuideAnswer() {
 let recognition = null;
 function toggleSpeechInput() {
   const input = document.getElementById('answerInput');
-  if (recognition && recognition.active) {
-    recognition.stop();
+  if (window._recognition && window._recognition.active) {
+    window._recognition.stop();
     return;
   }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { alert('你的浏览器不支持语音识别，请使用 Chrome'); return; }
-  recognition = new SR();
-  recognition.lang = 'en-US';
-  recognition.interimResults = false;
-  recognition.onresult = (e) => {
+  window._recognition = new SR();
+  const rec = window._recognition;
+  rec.lang = 'en-US';
+  rec.interimResults = false;
+  rec.continuous = false;
+  rec.onresult = (e) => {
     const transcript = e.results[0][0].transcript;
     input.value += (input.value ? ' ' : '') + transcript;
   };
-  recognition.onend = () => {
+  rec.onend = () => {
     document.getElementById('speechInputBtn').textContent = '🎤 语音输入';
   };
-  recognition.onerror = (e) => {
+  rec.onerror = (e) => {
+    console.error('Speech recognition error:', e.error);
     document.getElementById('speechInputBtn').textContent = '🎤 语音输入';
   };
-  recognition.start();
-  document.getElementById('speechInputBtn').textContent = '⏹ 停止录音';
+  try {
+    rec.start();
+    document.getElementById('speechInputBtn').textContent = '⏹ 停止录音';
+  } catch(e) {
+    console.error('Speech start error:', e);
+  }
 }
 function clearAnswer() {
   document.getElementById('answerInput').value = '';
@@ -1356,7 +1353,7 @@ async function submitAnswer() {
   if (!state.selectedQuestion) { alert('请先选择一个题目'); return; }
   
   const apiKey = document.getElementById('apiKeyInput').value.trim();
-  if (!apiKey) { alert('请先在左侧填写 DeepSeek API Key'); return; }
+  if (!apiKey) { alert('请先在左侧选择 API 提供商并填写 API Key'); return; }
 
   stopTimer();
   document.getElementById('scoringLoader').classList.add('show');
@@ -1365,7 +1362,7 @@ async function submitAnswer() {
   const prompt = buildScoringPrompt(state.selectedQuestion, answer);
   
   try {
-    const result = await callDeepSeek(apiKey, prompt);
+    const result = await callAI(apiKey, prompt);
     const data = parseScoreResult(result);
     state.currentScore = { question: state.selectedQuestion, answer, data, time: new Date().toISOString(), duration: state.timerSeconds };
     renderScoreResult(data);
@@ -1410,15 +1407,25 @@ IELTS band scores must be one of: 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0
 Be fair and accurate. Do not over-inflate or under-score.`;
 }
 
-async function callDeepSeek(apiKey, prompt) {
-  const resp = await fetch('https://api.deepseek.com/chat/completions', {
+async function callAI(apiKey, prompt) {
+  const provider = document.getElementById('apiProvider').value;
+  let apiUrl = '';
+  let model = '';
+  if (provider === 'siliconflow') {
+    apiUrl = 'https://api.siliconflow.cn/v1/chat/completions';
+    model = 'deepseek-ai/DeepSeek-V3';
+  } else {
+    apiUrl = 'https://api.deepseek.com/chat/completions';
+    model = 'deepseek-chat';
+  }
+  const resp = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + apiKey
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 1200,
@@ -1897,10 +1904,13 @@ function showExamQuestion() {
   if (examState.phase === 'P1') {
     const q = examState.p1Questions[examState.p1Index];
     document.getElementById('examPhase').textContent = 'Part 1 — 第 ' + (examState.p1Index + 1) + '/5 题';
-    document.getElementById('examProgress').textContent = '雅思口语模拟考试';
-    let html = `<div style="font-size:18px;font-weight:600;margin-bottom:8px">${q.topic}</div>`;
+    document.getElementById('examProgress').textContent = '雅思口语模拟考试 — 小题 ' + (examState.p1SubIndex + 1) + '/' + (q.questions ? q.questions.length : 1);
+    document.getElementById('examNextSubBtn').style.display = (q.questions && q.questions.length > 1) ? '' : 'none';
+    document.getElementById('examHideBtn').style.display = '';
+    document.getElementById('examQuestionArea').style.display = '';
+    let html = `<div style="font-size:20px;font-weight:700;margin-bottom:10px">${q.topic}</div>`;
     if (q.questions && q.questions.length) {
-      html += `<div style="font-size:14px;color:var(--text-muted);line-height:2">${q.questions.map((s,i) => '<div style="' + (i === 0 ? 'font-weight:600;color:var(--text)' : '') + '">• ' + s + '</div>').join('')}</div>`;
+      html += `<div style="font-size:18px;font-weight:600;color:var(--text);line-height:2.4">${q.questions.map((s,i) => '<div style="' + (i === examState.p1SubIndex ? 'font-weight:700;color:var(--text);background:var(--blue-bg);padding:6px 10px;border-radius:6px' : 'font-weight:400;color:var(--text-muted)') + '">• ' + s + '</div>').join('')}</div>`;
     }
     document.getElementById('examQuestionArea').innerHTML = html;
     document.getElementById('examP2Card').style.display = 'none';
@@ -1930,6 +1940,17 @@ function showExamQuestion() {
   document.getElementById('examAnswerInput').focus();
 }
 
+
+function hideExamQuestion() {
+  document.getElementById('examQuestionArea').style.display = 'none';
+  document.getElementById('examHideBtn').style.display = 'none';
+  document.getElementById('examShowBtn').style.display = '';
+}
+function showExamQuestionArea() {
+  document.getElementById('examQuestionArea').style.display = '';
+  document.getElementById('examHideBtn').style.display = '';
+  document.getElementById('examShowBtn').style.display = 'none';
+}
 function examAction() {
   if (examState.phase === 'P1') {
     examState.p1Index++;
@@ -1989,9 +2010,11 @@ function speakExamQuestion() {
   let text = '';
   if (examState.phase === 'P1') {
     const q = examState.p1Questions[examState.p1Index];
-    text = q.questions ? q.questions.join(' ') : q.text;
+    if (q.questions && q.questions[examState.p1SubIndex]) {
+      text = q.questions[examState.p1SubIndex];
+    }
   } else if (examState.phase === 'P2') {
-    text = examState.p2Question ? examState.p2Question.text.replace(/\n/g, '. ') : '';
+    text = examState.p2Question ? examState.p2Question.text.split('\n')[0] : '';
   } else if (examState.phase === 'P3') {
     const q = examState.p3Questions[examState.p3Index];
     text = q ? q.text : '';
@@ -2005,6 +2028,38 @@ function speakExamQuestion() {
   const gbVoice = voices.find(v => v.lang && v.lang.startsWith('en-GB'));
   if (gbVoice) utter.voice = gbVoice;
   window.speechSynthesis.speak(utter);
+}
+
+// P1 guide mode: submit answer and move to next sub-question
+function submitP1GuideAnswer() {
+  const q = state.selectedQuestion;
+  if (!q || !q.questions) return;
+  state.p1GuideIndex++;
+  if (state.p1GuideIndex >= q.questions.length) {
+    // All sub-questions answered
+    document.getElementById('p1GuideArea').style.display = 'none';
+    alert('所有小问已回答完毕！');
+  } else {
+    showP1GuideQuestion();
+  }
+}
+
+// Exam P1: move to next sub-question
+function examP1NextSub() {
+  examState.p1SubIndex++;
+  if (examState.p1SubIndex >= examState.p1Questions[examState.p1Index].questions.length) {
+    // Move to next P1 question
+    examState.p1Index++;
+    examState.p1SubIndex = 0;
+    if (examState.p1Index >= examState.p1Questions.length) {
+      examState.phase = 'P2';
+      showExamQuestion();
+    } else {
+      showExamQuestion();
+    }
+  } else {
+    showExamQuestion();
+  }
 }
 
   </script>
