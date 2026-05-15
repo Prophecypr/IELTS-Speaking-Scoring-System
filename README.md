@@ -35,3 +35,23 @@
 ## 更新日志
 
 见 `CHANGELOG.md`
+
+## 双文件夹同步方案
+
+工作路径：`E:\Vibe Coding\IELTS Speaking Scoring System\`（主开发文件夹）  
+备份路径：`E:\prophecypr_project\github\IELTS Speaking Scoring System\`（备份 / 发布文件夹）  
+
+每次更新后执行：
+```bat
+# 1. 提交并推送到 GitHub
+cd "E:\Vibe Coding\IELTS Speaking Scoring System"
+git add -A && git commit -m "描述本次更新"
+git push
+
+# 2. 同步到本地备份文件夹
+copy "E:\Vibe Coding\IELTS Speaking Scoring System\ielts-speaking.html" "E:\prophecypr_project\github\IELTS Speaking Scoring System\"
+copy "E:\Vibe Coding\IELTS Speaking Scoring System\README.md" "E:\prophecypr_project\github\IELTS Speaking Scoring System\"
+copy "E:\Vibe Coding\IELTS Speaking Scoring System\CHANGELOG.md" "E:\prophecypr_project\github\IELTS Speaking Scoring System\"
+```
+
+Chicago.md` 每次更新后手动更新，记录本次变更。
