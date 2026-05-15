@@ -8,12 +8,16 @@
 - 题库导入功能：导出页面新增"导入题库 JSON"，支持用户自定义题库合并
 - GitHub 仓库同步：`git@github.com:Prophecypr/IELTS-Speaking-Scoring-System.git`
 - 双文件夹同步：`E:\Vibe Coding\IELTS Speaking Scoring System` ↔ `E:\prophecypr_project\github\IELTS Speaking Scoring System`
+- 题目音频播放：选择题目后可点击 🔊 按钮播放题目音频（英式口音，SpeechSynthesis API）
 
 ### Changed
 - P1 题目显示：练习区/浏览区卡片标题改为 topic（如"Music"），取代英文问题文本
-- P2 题目显示：回答区大标题改为中文话题（如"建筑"），取代英文"Describe..."
+- P2 题目显示：回答区标题改为英文题目第一行，中文话题作为副标题（取代原中文话题作为标题）
 - P1/P2/P3 回答区大标题字体加大：14px/15px → 20px，加粗 500 → 600
 - 题库网格布局：卡片最小宽度 280px → 250px，宽屏下一行可显示 3 个
+- 题目回答区居中显示（`text-align: center`）
+- P1/P2 浏览区卡片标题改为英文题目第一行（取代中文话题）
+- 话题筛选器动态过滤：切换 Part 后，话题下拉菜单只显示对应 Part 的话题
 - AI 评分 Prompt：新增 Part 3 类型描述（Discussion questions）
 
 ### Fixed
