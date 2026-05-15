@@ -10,8 +10,10 @@
 - 双文件夹同步：`E:\Vibe Coding\IELTS Speaking Scoring System` ↔ `E:\prophecypr_project\github\IELTS Speaking Scoring System`
 
 ### Changed
-- P1 题目显示：移除了话题标签（如"Music"），直接显示第一道题目文本
-- P2 题目显示：卡片标题改为中文话题（如"建筑"），取代英文"Describe..."
+- P1 题目显示：练习区/浏览区卡片标题改为 topic（如"Music"），取代英文问题文本
+- P2 题目显示：回答区大标题改为中文话题（如"建筑"），取代英文"Describe..."
+- P1/P2/P3 回答区大标题字体加大：14px/15px → 20px，加粗 500 → 600
+- 题库网格布局：卡片最小宽度 280px → 250px，宽屏下一行可显示 3 个
 - AI 评分 Prompt：新增 Part 3 类型描述（Discussion questions）
 
 ### Fixed
